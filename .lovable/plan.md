@@ -1,115 +1,136 @@
 
+# Correção: Download de PDF Bloqueado ou Não Iniciado
 
-## Diagnóstico (por que “continua bloqueando”)
+## Diagnóstico
 
-Mesmo com a mudança em `usePdfGeneration.previewPdf()` abrindo a aba antes do `await generatePdf(...)`, ainda existe um caso onde o Chrome bloqueia:
+Após investigação detalhada com o browser automatizado:
 
-- Em **NewProposal** e **EditProposal**, o fluxo “Pré-visualizar/Visualizar PDF” faz primeiro um **`await createProposal(...)` / `await updateProposal(...)`** e **só depois** chama `previewPdf(...)`.
-- O Chrome considera que, após um `await`, você **perde o “user gesture” (o contexto do clique)**.
-- Resultado: quando `previewPdf()` roda, o `window.open()` acontece **tarde demais** (após um `await` anterior no handler) e o Chrome trata como popup não autorizado.
+1. **A Edge Function `generate-pdf` está funcionando corretamente** - Confirmado com status 200 e URL válida retornada
+2. **O toast de sucesso aparece** - "PDF gerado! O arquivo foi criado com sucesso"
+3. **O problema está no download** - O navegador pode estar bloqueando o download programático
 
-Onde isso acontece hoje:
-- `src/pages/NewProposal.tsx` → `handlePreview` (abre preview **depois** de `await createProposal`)
-- `src/pages/EditProposal.tsx` → `handlePreview` (abre preview **depois** de `await updateProposal`)
+O código atual de download:
+```typescript
+const a = document.createElement('a');
+a.href = result.pdfUrl;
+a.download = result.fileName;
+a.click();
+```
 
-## Objetivo
+Este padrão pode falhar porque:
+- O download acontece **após operações assíncronas** (geração do PDF)
+- Alguns navegadores bloqueiam downloads iniciados fora do contexto de clique direto do usuário
+- O atributo `download` em links cross-origin (Supabase Storage) pode não funcionar como esperado
 
-Garantir que a aba do preview seja aberta **no mesmo “tick” do clique** do usuário, antes de qualquer operação async (antes de qualquer `await` no handler), e depois apenas:
-- gerar o PDF
-- redirecionar a aba já aberta para a URL do PDF
+## Solução Proposta
 
-Isso evita o bloqueio do Chrome.
+### 1. Para ViewProposal - Download direto via fetch + blob
 
----
+Modificar `downloadPdf` para baixar o arquivo como blob e criar um Object URL local, garantindo que o download funcione:
 
-## Mudanças propostas (implementação)
+```typescript
+const downloadPdf = async (proposalId: string) => {
+  const result = await generatePdf(proposalId);
+  if (result?.pdfUrl) {
+    try {
+      // Fetch the PDF as blob
+      const response = await fetch(result.pdfUrl);
+      const blob = await response.blob();
+      
+      // Create object URL from blob
+      const blobUrl = URL.createObjectURL(blob);
+      
+      // Create and click download link
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = result.fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      
+      // Clean up object URL
+      URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      // Fallback: open in new tab if download fails
+      window.open(result.pdfUrl, '_blank');
+    }
+  }
+  return result;
+};
+```
 
-### 1) Refatorar o hook `usePdfGeneration` para aceitar “janela pré-aberta”
+### 2. Alternativa mais simples - Abrir em nova aba
 
-Arquivo: `src/hooks/usePdfGeneration.ts`
+Se o download continuar problemático, podemos simplesmente abrir o PDF em uma nova aba:
 
-Ajustes:
-1. Criar um helper no hook:
-   - `openPdfPreviewWindow()` → faz `window.open('', '_blank')` e escreve o HTML “Gerando PDF...”
-2. Alterar `previewPdf` para aceitar uma janela opcional:
-   - `previewPdf(proposalId: string, existingWindow?: Window | null)`
-   - Se `existingWindow` vier, **não chamar `window.open`** dentro do hook; só usar `existingWindow`.
-3. Manter o comportamento atual para quem chamar `previewPdf(proposalId)` diretamente (sem passar window), mas o fluxo “Preview após salvar” passará uma janela pré-aberta.
+```typescript
+const downloadPdf = async (proposalId: string) => {
+  const result = await generatePdf(proposalId);
+  if (result?.pdfUrl) {
+    // Open PDF in new tab - user can save from there
+    window.open(result.pdfUrl, '_blank');
+  }
+  return result;
+};
+```
 
-Comportamento esperado do hook:
-- Se receber uma janela válida:
-  - usa a janela
-  - depois redireciona `existingWindow.location.href = pdfUrl`
-- Se não receber janela e tentar abrir e falhar (`null`):
-  - exibir toast orientando o usuário a permitir popups (e não tentar seguir com preview em nova aba)
+**Importante**: Esta abordagem também pode ser bloqueada pelo Chrome por ser chamada após `await`. Para resolver:
 
-### 2) Corrigir NewProposal: abrir a aba ANTES de salvar (antes do primeiro await)
+### 3. Solução completa - Mesma abordagem do preview
 
-Arquivo: `src/pages/NewProposal.tsx`
+Aplicar a mesma estratégia do preview: abrir a aba **antes** da operação assíncrona:
 
-Alterar `handlePreview` para:
+```typescript
+const downloadPdf = async (proposalId: string, preOpenedWindow?: Window | null) => {
+  const result = await generatePdf(proposalId);
+  
+  if (result?.pdfUrl) {
+    if (preOpenedWindow) {
+      // Redirect pre-opened window to PDF
+      preOpenedWindow.location.href = result.pdfUrl;
+    } else {
+      // Try to fetch and download as blob
+      try {
+        const response = await fetch(result.pdfUrl);
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = result.fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        
+        URL.revokeObjectURL(blobUrl);
+      } catch {
+        // Fallback: show toast with link
+        toast({
+          title: 'PDF pronto para download',
+          description: 'Clique aqui para baixar o PDF.',
+          action: <a href={result.pdfUrl} download={result.fileName}>Baixar</a>
+        });
+      }
+    }
+  }
+  
+  return result;
+};
+```
 
-1. Validar form e itens (continua igual)
-2. Abrir a nova aba **imediatamente** (antes de `setIsPreviewing(true)` e principalmente antes de `await createProposal(...)`):
-   - `const previewWindow = window.open('', '_blank')`
-   - escrever o HTML “Gerando PDF...” ali
-   - se `previewWindow === null`, mostrar toast “Popup bloqueado, permita popups” e abortar
-3. Só depois:
-   - `await createProposal(...)`
-4. Se criou com sucesso:
-   - `await previewPdf(result.data.id, previewWindow)`
-5. Se falhou em criar:
-   - fechar a aba aberta (para não deixar uma aba em branco)
+## Arquivos a Modificar
 
-Isso garante que o popup é criado ainda no contexto do clique.
+| Arquivo | Mudança |
+|---------|---------|
+| `src/hooks/usePdfGeneration.ts` | Modificar `downloadPdf` para usar blob/fetch ou abrir nova aba |
 
-### 3) Corrigir EditProposal: abrir a aba ANTES de atualizar
+## Comportamento Esperado Após Correção
 
-Arquivo: `src/pages/EditProposal.tsx`
+1. Usuário clica "Baixar PDF"
+2. Botão mostra spinner de loading (~5 segundos)
+3. Toast de sucesso aparece
+4. **O arquivo PDF é baixado automaticamente** ou **abre em nova aba para o usuário salvar**
 
-Mesma estratégia do NewProposal:
+## Recomendação
 
-1. Validar
-2. Abrir a aba **antes** de `await updateProposal(...)`
-3. Se `window.open` retornar `null`, toast e abortar
-4. Atualiza a proposta
-5. Se sucesso, chama `previewPdf(id, previewWindow)`
-6. Se falhar, fecha a aba
-
-### 4) (Opcional, mas recomendado) Mensagem clara quando popup está bloqueado
-
-Em ambos os handlers (New/Edit):
-- Se `window.open` retornar `null`, mostrar toast com instrução simples:
-  - “O Chrome bloqueou a abertura da aba. Permita popups para este site e tente novamente. Alternativamente use ‘Baixar PDF’.”
-
----
-
-## Testes de validação (passo a passo)
-
-1) **Chrome** → Nova proposta → clicar **Pré-visualizar PDF**
-- Deve abrir uma aba imediatamente com “Gerando PDF…”
-- Após alguns segundos, a aba deve navegar para o PDF
-- Não pode aparecer o bloqueio de popup
-
-2) **Chrome** → Editar proposta → clicar **Visualizar PDF**
-- Mesmo comportamento acima
-
-3) Com popups bloqueados propositalmente:
-- Ao clicar Preview, deve aparecer toast avisando
-- Não deve ficar aba “fantasma” ou comportamento inconsistente
-
----
-
-## Observações / edge cases
-
-- O redirecionamento `newWindow.location.href = pdfUrl` não depende de “user gesture”, então é seguro ocorrer depois.
-- Se a geração falhar, fechamos a aba aberta (quando ela foi aberta por script). Se o Chrome impedir fechar, ao menos a aba mostrará o “Gerando PDF…”; podemos também atualizar o conteúdo para “Falha ao gerar PDF” (opcional).
-
----
-
-## Arquivos envolvidos
-
-- `src/hooks/usePdfGeneration.ts` (ajustar API do hook para suportar window pré-aberta)
-- `src/pages/NewProposal.tsx` (abrir aba antes do primeiro await no preview)
-- `src/pages/EditProposal.tsx` (abrir aba antes do primeiro await no preview)
-
+Sugiro implementar a **solução com fetch + blob** como primeira opção, com fallback para abrir em nova aba. Isso garante compatibilidade máxima com diferentes navegadores.
