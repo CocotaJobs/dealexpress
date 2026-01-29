@@ -35,64 +35,28 @@ import {
 } from 'lucide-react';
 
 const adminMenuItems = [
-  {
-    title: 'Dashboard',
-    icon: LayoutDashboard,
-    url: '/dashboard',
-  },
-  {
-    title: 'Propostas',
-    icon: FileText,
-    url: '/proposals',
-  },
-  {
-    title: 'Nova Proposta',
-    icon: PlusCircle,
-    url: '/proposals/new',
-  },
+  { title: 'Dashboard', icon: LayoutDashboard, url: '/dashboard' },
+  { title: 'Propostas', icon: FileText, url: '/proposals' },
+  { title: 'Nova Proposta', icon: PlusCircle, url: '/proposals/new' },
 ];
 
 const adminManagementItems = [
-  {
-    title: 'Itens',
-    icon: Package,
-    url: '/items',
-  },
-  {
-    title: 'Templates',
-    icon: Files,
-    url: '/templates',
-  },
-  {
-    title: 'Usuários',
-    icon: Users,
-    url: '/users',
-  },
+  { title: 'Itens', icon: Package, url: '/items' },
+  { title: 'Templates', icon: Files, url: '/templates' },
+  { title: 'Usuários', icon: Users, url: '/users' },
 ];
 
 const vendorMenuItems = [
-  {
-    title: 'Dashboard',
-    icon: LayoutDashboard,
-    url: '/dashboard',
-  },
-  {
-    title: 'Minhas Propostas',
-    icon: List,
-    url: '/proposals',
-  },
-  {
-    title: 'Nova Proposta',
-    icon: PlusCircle,
-    url: '/proposals/new',
-  },
+  { title: 'Dashboard', icon: LayoutDashboard, url: '/dashboard' },
+  { title: 'Minhas Propostas', icon: List, url: '/proposals' },
+  { title: 'Nova Proposta', icon: PlusCircle, url: '/proposals/new' },
 ];
 
 export function AppSidebar() {
   const location = useLocation();
-  const { user, logout } = useAuth();
+  const { profile, signOut } = useAuth();
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = profile?.role === 'admin';
   const mainMenuItems = isAdmin ? adminMenuItems : vendorMenuItems;
 
   const getInitials = (name: string) => {
@@ -102,6 +66,10 @@ export function AppSidebar() {
       .join('')
       .toUpperCase()
       .slice(0, 2);
+  };
+
+  const handleLogout = async () => {
+    await signOut();
   };
 
   return (
@@ -170,7 +138,7 @@ export function AppSidebar() {
                 <SidebarMenuButton
                   asChild
                   className={
-                    user?.whatsapp_connected
+                    profile?.whatsapp_connected
                       ? 'text-success hover:text-success'
                       : 'text-destructive hover:text-destructive'
                   }
@@ -178,11 +146,11 @@ export function AppSidebar() {
                   <Link to="/whatsapp">
                     <MessageSquare className="w-4 h-4" />
                     <span>
-                      {user?.whatsapp_connected ? 'WhatsApp Conectado' : 'Conectar WhatsApp'}
+                      {profile?.whatsapp_connected ? 'WhatsApp Conectado' : 'Conectar WhatsApp'}
                     </span>
                     <div
                       className={`w-2 h-2 rounded-full ml-auto ${
-                        user?.whatsapp_connected ? 'bg-success' : 'bg-destructive'
+                        profile?.whatsapp_connected ? 'bg-success' : 'bg-destructive'
                       }`}
                     />
                   </Link>
@@ -199,14 +167,14 @@ export function AppSidebar() {
             <button className="flex items-center gap-3 w-full p-2 rounded-lg hover:bg-sidebar-accent transition-colors">
               <Avatar className="w-8 h-8">
                 <AvatarFallback className="bg-primary text-primary-foreground text-sm">
-                  {user?.name ? getInitials(user.name) : 'U'}
+                  {profile?.name ? getInitials(profile.name) : 'U'}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1 text-left">
                 <p className="text-sm font-medium text-sidebar-foreground truncate">
-                  {user?.name}
+                  {profile?.name}
                 </p>
-                <p className="text-xs text-muted-foreground capitalize">{user?.role}</p>
+                <p className="text-xs text-muted-foreground capitalize">{profile?.role}</p>
               </div>
               <ChevronUp className="w-4 h-4 text-muted-foreground" />
             </button>
@@ -219,7 +187,7 @@ export function AppSidebar() {
               </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">
+            <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
               <LogOut className="w-4 h-4 mr-2" />
               Sair
             </DropdownMenuItem>

@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
@@ -7,8 +6,7 @@ import { MessageSquare, QrCode, CheckCircle, XCircle, RefreshCw, Loader2 } from 
 import { useToast } from '@/hooks/use-toast';
 
 export default function WhatsApp() {
-  const { user, updateUser } = useAuth();
-  const navigate = useNavigate();
+  const { profile, refreshProfile } = useAuth();
   const { toast } = useToast();
   const [isConnecting, setIsConnecting] = useState(false);
   const [showQRCode, setShowQRCode] = useState(false);
@@ -17,10 +15,14 @@ export default function WhatsApp() {
     setIsConnecting(true);
     setShowQRCode(true);
 
-    // Simulate QR code scanning and connection
+    // TODO: Implement real WhatsApp connection via Evolution API
+    // For now, simulate QR code scanning
     await new Promise((resolve) => setTimeout(resolve, 5000));
 
-    updateUser({ whatsapp_connected: true, whatsapp_session_id: 'session-' + Date.now() });
+    // In the real implementation, this would update via the backend
+    // and we'd refresh the profile to get the new status
+    await refreshProfile();
+    
     setShowQRCode(false);
     setIsConnecting(false);
 
@@ -30,8 +32,10 @@ export default function WhatsApp() {
     });
   };
 
-  const handleDisconnect = () => {
-    updateUser({ whatsapp_connected: false, whatsapp_session_id: undefined });
+  const handleDisconnect = async () => {
+    // TODO: Implement real disconnect via Evolution API
+    await refreshProfile();
+    
     toast({
       title: 'WhatsApp desconectado',
       description: 'Sua conta foi desconectada.',
@@ -57,7 +61,7 @@ export default function WhatsApp() {
                 <MessageSquare className="w-5 h-5" />
                 Status da Conexão
               </CardTitle>
-              {user?.whatsapp_connected ? (
+              {profile?.whatsapp_connected ? (
                 <div className="flex items-center gap-2 text-success">
                   <CheckCircle className="w-5 h-5" />
                   <span className="font-medium">Conectado</span>
@@ -71,7 +75,7 @@ export default function WhatsApp() {
             </div>
           </CardHeader>
           <CardContent>
-            {user?.whatsapp_connected ? (
+            {profile?.whatsapp_connected ? (
               <div className="space-y-4">
                 <div className="p-4 rounded-lg bg-success/10 border border-success/20">
                   <p className="text-sm">

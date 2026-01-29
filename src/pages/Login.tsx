@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,13 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { signIn, isAuthenticated, isLoading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, authLoading, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,14 +28,33 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      await login(email, password);
-      navigate('/dashboard');
+      const { error: signInError } = await signIn(email, password);
+      
+      if (signInError) {
+        if (signInError.message.includes('Invalid login credentials')) {
+          setError('Email ou senha incorretos.');
+        } else if (signInError.message.includes('Email not confirmed')) {
+          setError('Por favor, confirme seu email antes de fazer login.');
+        } else {
+          setError(signInError.message);
+        }
+      } else {
+        navigate('/dashboard', { replace: true });
+      }
     } catch (err) {
-      setError('Credenciais inválidas. Tente novamente.');
+      setError('Erro ao fazer login. Tente novamente.');
     } finally {
       setIsLoading(false);
     }
   };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-surface">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex">
@@ -159,46 +184,12 @@ export default function Login() {
                     </>
                   )}
                 </Button>
-
-                <div className="relative my-6">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-border" />
-                  </div>
-                  <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-card px-2 text-muted-foreground">Demo</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-10"
-                    onClick={() => {
-                      setEmail('admin@proposalflow.com');
-                      setPassword('demo123');
-                    }}
-                  >
-                    Entrar como Admin
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-10"
-                    onClick={() => {
-                      setEmail('vendor@proposalflow.com');
-                      setPassword('demo123');
-                    }}
-                  >
-                    Entrar como Vendedor
-                  </Button>
-                </div>
               </form>
             </CardContent>
           </Card>
 
           <p className="text-center text-sm text-muted-foreground mt-6">
-            Recebeu um convite?{' '}
+            Não tem uma conta?{' '}
             <Link to="/register" className="text-primary hover:text-primary/80 font-medium">
               Criar conta
             </Link>
