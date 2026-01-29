@@ -25,31 +25,20 @@
 - Propostas: listagem, criação, duplicação, exclusão
 - Templates: upload, ativação, download, histórico
 
+### Fase 5 - Geração de PDF ✅
+- Edge Function `generate-pdf` criada
+- Geração de PDF a partir de template HTML
+- Armazenamento no bucket `generated-pdfs`
+- Botão de pré-visualização funcionando
+- Integração com envio via WhatsApp
+
+### Fase 6 - Envio via WhatsApp ✅
+- PDF gerado e armazenado automaticamente
+- Envio via Evolution API com PDF anexado
+- Atualização de status para "sent"
+- Mensagem personalizada com nome do cliente
+
 ## 🚧 Próximos Passos
-
-### Fase 5 - Geração de PDF
-**Objetivo:** Gerar propostas em PDF usando templates Word (.docx)
-
-**Tecnologia:**
-- Edge Function com biblioteca docxtemplater (Deno)
-- Conversão .docx → PDF usando LibreOffice ou API externa
-
-**Fluxo:**
-1. Usuário clica em "Gerar PDF" ou "Enviar via WhatsApp"
-2. Edge Function busca o template ativo
-3. Preenche os campos dinâmicos com dados da proposta
-4. Converte para PDF
-5. Armazena no bucket `generated-pdfs`
-6. Retorna URL do PDF
-
-### Fase 6 - Envio via WhatsApp
-**Objetivo:** Enviar o PDF gerado diretamente para o cliente
-
-**Fluxo:**
-1. PDF gerado e armazenado
-2. Edge Function envia via Evolution API
-3. Atualiza status da proposta para "sent"
-4. Registra data de envio
 
 ### Fase 7 - Dashboard com Métricas
 **Objetivo:** Mostrar estatísticas e resumos
@@ -64,3 +53,4 @@
 - Edição de proposta existente
 - Gerenciamento de categorias dedicado
 - Relatórios exportáveis
+- Templates Word (.docx) com docxtemplater
