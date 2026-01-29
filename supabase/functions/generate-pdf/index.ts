@@ -222,8 +222,117 @@ function parseHtmlContent(html: string): string[] {
   return lines;
 }
 
-// Generate high-quality PDF using pdf-lib
-async function generatePdfWithPdfLib(data: ProposalData, htmlContent?: string): Promise<Uint8Array> {
+// Generate PDF from HTML content (custom template)
+async function generatePdfFromHtml(htmlContent: string, data: ProposalData): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.create();
+  const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  // A4 dimensions in points
+  const pageWidth = 595.28;
+  const pageHeight = 841.89;
+  const margin = 50;
+  const contentWidth = pageWidth - 2 * margin;
+
+  let page = pdfDoc.addPage([pageWidth, pageHeight]);
+  let yPosition = pageHeight - margin;
+
+  const textColor = rgb(0.122, 0.161, 0.216);
+  const mutedColor = rgb(0.420, 0.451, 0.490);
+
+  // Helper to add new page if needed
+  const checkPageBreak = (neededHeight: number) => {
+    if (yPosition - neededHeight < margin + 30) {
+      page = pdfDoc.addPage([pageWidth, pageHeight]);
+      yPosition = pageHeight - margin;
+    }
+  };
+
+  // Parse HTML content to lines
+  const lines = parseHtmlContent(htmlContent);
+
+  for (const line of lines) {
+    // Detect headings
+    const isH1 = line.startsWith('### ') && line.endsWith(' ###');
+    const isH2 = line.startsWith('## ') && line.endsWith(' ##');
+    const isH3 = line.startsWith('# ') && line.endsWith(' #');
+    const isBold = line.includes('**');
+
+    let text = line;
+    let fontSize = 10;
+    let font = helveticaFont;
+    let color = textColor;
+
+    if (isH1) {
+      text = line.replace(/^### /, '').replace(/ ###$/, '');
+      fontSize = 18;
+      font = helveticaBold;
+      checkPageBreak(fontSize + 15);
+      yPosition -= 10; // Extra spacing before heading
+    } else if (isH2) {
+      text = line.replace(/^## /, '').replace(/ ##$/, '');
+      fontSize = 14;
+      font = helveticaBold;
+      checkPageBreak(fontSize + 12);
+      yPosition -= 8;
+    } else if (isH3) {
+      text = line.replace(/^# /, '').replace(/ #$/, '');
+      fontSize = 12;
+      font = helveticaBold;
+      checkPageBreak(fontSize + 10);
+      yPosition -= 6;
+    } else if (isBold) {
+      text = line.replace(/\*\*/g, '');
+      font = helveticaBold;
+    }
+
+    // Handle bullet points
+    if (text.startsWith('  • ')) {
+      text = '  • ' + text.substring(4);
+    }
+
+    // Word wrap logic
+    const words = text.split(' ');
+    let currentLine = '';
+
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const testWidth = font.widthOfTextAtSize(testLine, fontSize);
+
+      if (testWidth > contentWidth && currentLine) {
+        checkPageBreak(fontSize + 4);
+        page.drawText(currentLine, { x: margin, y: yPosition, size: fontSize, font, color });
+        yPosition -= fontSize + 4;
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+
+    if (currentLine) {
+      checkPageBreak(fontSize + 4);
+      page.drawText(currentLine, { x: margin, y: yPosition, size: fontSize, font, color });
+      yPosition -= fontSize + 6;
+    }
+  }
+
+  // Add footer
+  yPosition = margin + 20;
+  const footerText = 'Documento gerado automaticamente';
+  const footerWidth = helveticaFont.widthOfTextAtSize(footerText, 8);
+  page.drawText(footerText, {
+    x: margin + (contentWidth - footerWidth) / 2,
+    y: yPosition,
+    size: 8,
+    font: helveticaFont,
+    color: mutedColor,
+  });
+
+  return pdfDoc.save();
+}
+
+// Generate default PDF using pdf-lib (when no template)
+async function generateDefaultPdf(data: ProposalData): Promise<Uint8Array> {
   const { proposal, items, vendor, organization, totalValue } = data;
 
   const pdfDoc = await PDFDocument.create();
@@ -340,7 +449,7 @@ async function generatePdfWithPdfLib(data: ProposalData, htmlContent?: string): 
     { label: 'Empresa:', value: proposal.client_company },
     { label: 'Email:', value: proposal.client_email },
     { label: 'WhatsApp:', value: proposal.client_whatsapp },
-    { label: 'Endereço:', value: proposal.client_address },
+    { label: 'Endereco:', value: proposal.client_address },
   ].filter(f => f.value);
 
   for (const field of clientFields) {
@@ -372,7 +481,7 @@ async function generatePdfWithPdfLib(data: ProposalData, htmlContent?: string): 
   const colWidths = [220, 50, 90, 50, 90]; // Description, Qty, Unit Price, Disc, Subtotal
   let xPos = margin + 5;
 
-  const headers = ['Descrição', 'Qtd', 'Valor Unit.', 'Desc.', 'Subtotal'];
+  const headers = ['Descricao', 'Qtd', 'Valor Unit.', 'Desc.', 'Subtotal'];
   headers.forEach((header, i) => {
     drawText(header, xPos, yPosition, { font: helveticaBold, size: 9 });
     xPos += colWidths[i];
@@ -448,7 +557,7 @@ async function generatePdfWithPdfLib(data: ProposalData, htmlContent?: string): 
   if (proposal.payment_conditions) {
     checkPageBreak(60);
     
-    drawText('CONDIÇÕES DE PAGAMENTO', margin, yPosition, {
+    drawText('CONDICOES DE PAGAMENTO', margin, yPosition, {
       font: helveticaBold,
       size: 12,
       color: primaryColor,
@@ -678,19 +787,18 @@ Deno.serve(async (req) => {
         // Convert processed DOCX to HTML
         const htmlContent = await convertDocxToHtml(processedDocx);
         
-        // Use pdf-lib with the processed content
-        // We still use our high-quality pdf-lib generator but it will use the template data
-        pdfBuffer = await generatePdfWithPdfLib(proposalData, htmlContent);
+        // Generate PDF from the template HTML content
+        pdfBuffer = await generatePdfFromHtml(htmlContent, proposalData);
         usedCustomTemplate = true;
 
-        console.log('Custom template processed and PDF generated with pdf-lib');
+        console.log('Custom template processed and PDF generated from HTML');
       } catch (templateProcessError) {
         console.error('Error processing custom template, falling back to default:', templateProcessError);
-        pdfBuffer = await generatePdfWithPdfLib(proposalData);
+        pdfBuffer = await generateDefaultPdf(proposalData);
       }
     } else {
       console.log('No active template found, using default pdf-lib template');
-      pdfBuffer = await generatePdfWithPdfLib(proposalData);
+      pdfBuffer = await generateDefaultPdf(proposalData);
     }
 
     // Save PDF to storage
