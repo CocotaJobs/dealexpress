@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { FileText, Eye, EyeOff, ArrowRight, Loader2, CheckCircle2 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Register() {
   const [searchParams] = useSearchParams();
@@ -20,6 +21,7 @@ export default function Register() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
+  const { signUp } = useAuth();
 
   const passwordRequirements = [
     { label: 'Mínimo 8 caracteres', met: password.length >= 8 },
@@ -43,13 +45,24 @@ export default function Register() {
 
     setIsLoading(true);
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    setSuccess(true);
-
-    setTimeout(() => {
-      navigate('/login');
-    }, 2000);
+    try {
+      const { error: signUpError } = await signUp(email, password, name);
+      
+      if (signUpError) {
+        if (signUpError.message.includes('already registered')) {
+          setError('Este email já está cadastrado.');
+        } else {
+          setError(signUpError.message);
+        }
+      } else {
+        setSuccess(true);
+        setTimeout(() => navigate('/login'), 2000);
+      }
+    } catch (err) {
+      setError('Erro ao criar conta. Tente novamente.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (success) {
