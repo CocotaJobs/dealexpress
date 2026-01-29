@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -17,6 +17,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -27,6 +28,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Search,
   PlusCircle,
   MoreHorizontal,
@@ -34,73 +45,13 @@ import {
   Copy,
   FileDown,
   Pencil,
+  Trash2,
   Filter,
   FileText,
+  Loader2,
 } from 'lucide-react';
-
-// Mock proposals data
-const mockProposals = [
-  {
-    id: '1',
-    proposal_number: 'PROP-202501-0001',
-    client_name: 'João Silva',
-    client_email: 'joao@empresa.com',
-    client_company: 'Empresa ABC Ltda',
-    vendor_name: 'Ana Santos',
-    total_value: 15750.0,
-    status: 'sent',
-    created_at: '2025-01-28T10:30:00',
-    sent_at: '2025-01-28T14:45:00',
-  },
-  {
-    id: '2',
-    proposal_number: 'PROP-202501-0002',
-    client_name: 'Maria Oliveira',
-    client_email: 'maria@tech.com',
-    client_company: 'Tech Solutions',
-    vendor_name: 'Carlos Silva',
-    total_value: 28900.0,
-    status: 'draft',
-    created_at: '2025-01-27T09:15:00',
-    sent_at: null,
-  },
-  {
-    id: '3',
-    proposal_number: 'PROP-202501-0003',
-    client_name: 'Pedro Costa',
-    client_email: 'pedro@industria.com',
-    client_company: 'Indústria Nacional',
-    vendor_name: 'Ana Santos',
-    total_value: 45200.0,
-    status: 'sent',
-    created_at: '2025-01-25T16:00:00',
-    sent_at: '2025-01-26T10:20:00',
-  },
-  {
-    id: '4',
-    proposal_number: 'PROP-202501-0004',
-    client_name: 'Fernanda Lima',
-    client_email: 'fernanda@varejo.com',
-    client_company: 'Varejo Express',
-    vendor_name: 'Carlos Silva',
-    total_value: 8500.0,
-    status: 'expired',
-    created_at: '2025-01-10T11:30:00',
-    sent_at: '2025-01-10T15:00:00',
-  },
-  {
-    id: '5',
-    proposal_number: 'PROP-202501-0005',
-    client_name: 'Ricardo Santos',
-    client_email: 'ricardo@construcao.com',
-    client_company: 'Construções RS',
-    vendor_name: 'Ana Santos',
-    total_value: 67800.0,
-    status: 'draft',
-    created_at: '2025-01-29T08:00:00',
-    sent_at: null,
-  },
-];
+import { useProposals } from '@/hooks/useProposals';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const statusLabels: Record<string, string> = {
   draft: 'Rascunho',
@@ -109,16 +60,21 @@ const statusLabels: Record<string, string> = {
 };
 
 const statusVariants: Record<string, string> = {
-  draft: 'badge-draft',
-  sent: 'badge-sent',
-  expired: 'badge-expired',
+  draft: 'border-muted-foreground/50 text-muted-foreground',
+  sent: 'border-success/50 text-success bg-success/10',
+  expired: 'border-destructive/50 text-destructive bg-destructive/10',
 };
 
 export default function Proposals() {
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === 'admin';
+  const { proposals, isLoading, duplicateProposal, deleteProposal } = useProposals();
+
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDuplicating, setIsDuplicating] = useState<string | null>(null);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -135,11 +91,25 @@ export default function Proposals() {
     }).format(new Date(dateString));
   };
 
-  const filteredProposals = mockProposals.filter((proposal) => {
+  const handleDuplicate = async (id: string) => {
+    setIsDuplicating(id);
+    await duplicateProposal(id);
+    setIsDuplicating(null);
+  };
+
+  const handleDelete = async () => {
+    if (!deletingId) return;
+    setIsDeleting(true);
+    await deleteProposal(deletingId);
+    setIsDeleting(false);
+    setDeletingId(null);
+  };
+
+  const filteredProposals = proposals.filter((proposal) => {
     const matchesSearch =
       proposal.client_name.toLowerCase().includes(search.toLowerCase()) ||
       proposal.proposal_number.toLowerCase().includes(search.toLowerCase()) ||
-      proposal.client_company?.toLowerCase().includes(search.toLowerCase());
+      (proposal.client_company?.toLowerCase().includes(search.toLowerCase()) ?? false);
     const matchesStatus = statusFilter === 'all' || proposal.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -153,7 +123,7 @@ export default function Proposals() {
             {isAdmin ? 'Todas as Propostas' : 'Minhas Propostas'}
           </h1>
           <p className="text-muted-foreground">
-            {filteredProposals.length} propostas encontradas
+            {isLoading ? '...' : `${filteredProposals.length} propostas encontradas`}
           </p>
         </div>
         <Button asChild className="bg-gradient-primary shadow-primary hover:opacity-90">
@@ -210,7 +180,38 @@ export default function Proposals() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredProposals.length === 0 ? (
+            {isLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell>
+                    <Skeleton className="h-4 w-32" />
+                  </TableCell>
+                  <TableCell>
+                    <div className="space-y-1">
+                      <Skeleton className="h-4 w-24" />
+                      <Skeleton className="h-3 w-20" />
+                    </div>
+                  </TableCell>
+                  {isAdmin && (
+                    <TableCell>
+                      <Skeleton className="h-4 w-20" />
+                    </TableCell>
+                  )}
+                  <TableCell>
+                    <Skeleton className="h-4 w-20" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-24 ml-auto" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-6 w-20" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-8 w-8" />
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : filteredProposals.length === 0 ? (
               <TableRow>
                 <TableCell
                   colSpan={isAdmin ? 7 : 6}
@@ -232,16 +233,13 @@ export default function Proposals() {
                       <p className="text-sm text-muted-foreground">{proposal.client_company}</p>
                     </div>
                   </TableCell>
-                  {isAdmin && <TableCell>{proposal.vendor_name}</TableCell>}
+                  {isAdmin && <TableCell>{proposal.vendor?.name || '-'}</TableCell>}
                   <TableCell>{formatDate(proposal.created_at)}</TableCell>
                   <TableCell className="text-right font-medium">
-                    {formatCurrency(proposal.total_value)}
+                    {formatCurrency(proposal.total_value || 0)}
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={`${statusVariants[proposal.status]} font-medium`}
-                    >
+                    <Badge variant="outline" className={`${statusVariants[proposal.status]} font-medium`}>
                       {statusLabels[proposal.status]}
                     </Badge>
                   </TableCell>
@@ -270,8 +268,15 @@ export default function Proposals() {
                             </Link>
                           </DropdownMenuItem>
                         )}
-                        <DropdownMenuItem className="flex items-center gap-2">
-                          <Copy className="w-4 h-4" />
+                        <DropdownMenuItem
+                          onClick={() => handleDuplicate(proposal.id)}
+                          disabled={isDuplicating === proposal.id}
+                        >
+                          {isDuplicating === proposal.id ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <Copy className="w-4 h-4 mr-2" />
+                          )}
                           Duplicar
                         </DropdownMenuItem>
                         {proposal.status !== 'draft' && (
@@ -279,6 +284,18 @@ export default function Proposals() {
                             <FileDown className="w-4 h-4" />
                             Baixar PDF
                           </DropdownMenuItem>
+                        )}
+                        {proposal.status === 'draft' && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => setDeletingId(proposal.id)}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Excluir
+                            </DropdownMenuItem>
+                          </>
                         )}
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -289,6 +306,29 @@ export default function Proposals() {
           </TableBody>
         </Table>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deletingId} onOpenChange={() => setDeletingId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir Proposta</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir esta proposta? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

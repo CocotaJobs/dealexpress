@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -45,100 +45,24 @@ import {
   Filter,
   Wrench,
   Image,
+  Loader2,
+  FolderPlus,
 } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
-
-// Mock items data
-const mockItems = [
-  {
-    id: '1',
-    name: 'Parafusadeira Pro X',
-    category: 'Ferramentas Elétricas',
-    type: 'product',
-    price: 450.0,
-    max_discount: 15,
-    description: 'Parafusadeira profissional com 2 baterias',
-    technical_specs: 'Voltagem: 12V\nTorque: 35Nm\nCapacidade: 2 baterias de íon-lítio',
-    image_url: null,
-    active: true,
-  },
-  {
-    id: '2',
-    name: 'Máquina CNC 3000',
-    category: 'Máquinas',
-    type: 'product',
-    price: 28500.0,
-    max_discount: 10,
-    description: 'Centro de usinagem CNC de alta precisão',
-    technical_specs: 'Área de trabalho: 300x300x300mm\nPrecisão: 0.01mm\nPotência: 2.2kW',
-    image_url: null,
-    active: true,
-  },
-  {
-    id: '3',
-    name: 'Kit Ferramentas Premium',
-    category: 'Ferramentas Manuais',
-    type: 'product',
-    price: 890.0,
-    max_discount: 20,
-    description: 'Kit completo com 150 peças',
-    technical_specs: '150 peças incluindo chaves, alicates, martelos e acessórios',
-    image_url: null,
-    active: true,
-  },
-  {
-    id: '4',
-    name: 'Manutenção Preventiva',
-    category: 'Serviços',
-    type: 'service',
-    price: 1500.0,
-    max_discount: 5,
-    description: 'Serviço de manutenção preventiva mensal',
-    technical_specs: 'Inclui inspeção completa, limpeza, lubrificação e relatório técnico',
-    image_url: null,
-    active: true,
-  },
-  {
-    id: '5',
-    name: 'Compressor Industrial 200L',
-    category: 'Equipamentos',
-    type: 'product',
-    price: 4200.0,
-    max_discount: 12,
-    description: 'Compressor de ar industrial 200 litros',
-    technical_specs: 'Capacidade: 200L\nPressão máx: 175 PSI\nVazão: 425L/min',
-    image_url: null,
-    active: true,
-  },
-  {
-    id: '6',
-    name: 'Instalação de Equipamentos',
-    category: 'Serviços',
-    type: 'service',
-    price: 800.0,
-    max_discount: 0,
-    description: 'Serviço de instalação e configuração',
-    technical_specs: 'Inclui instalação, configuração inicial e treinamento básico',
-    image_url: null,
-    active: false,
-  },
-];
-
-const categories = [
-  'Ferramentas Elétricas',
-  'Ferramentas Manuais',
-  'Máquinas',
-  'Equipamentos',
-  'Serviços',
-];
+import { useItems, ItemWithCategory } from '@/hooks/useItems';
+import { useCategories } from '@/hooks/useCategories';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function Items() {
-  const { toast } = useToast();
+  const { items, isLoading, createItem, updateItem, toggleItemStatus } = useItems();
+  const { categories, isLoading: categoriesLoading, createCategory } = useCategories();
+
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<(typeof mockItems)[0] | null>(null);
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<ItemWithCategory | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Form state
   const [formName, setFormName] = useState('');
@@ -149,6 +73,9 @@ export default function Items() {
   const [formTechnicalSpecs, setFormTechnicalSpecs] = useState('');
   const [formMaxDiscount, setFormMaxDiscount] = useState('');
   const [formActive, setFormActive] = useState(true);
+
+  // New category form
+  const [newCategoryName, setNewCategoryName] = useState('');
 
   const resetForm = () => {
     setFormName('');
@@ -162,35 +89,61 @@ export default function Items() {
     setEditingItem(null);
   };
 
-  const openEditDialog = (item: (typeof mockItems)[0]) => {
+  const openEditDialog = (item: ItemWithCategory) => {
     setEditingItem(item);
     setFormName(item.name);
-    setFormCategory(item.category);
-    setFormType(item.type as 'product' | 'service');
+    setFormCategory(item.category_id || '');
+    setFormType(item.type);
     setFormPrice(item.price.toString());
-    setFormDescription(item.description);
-    setFormTechnicalSpecs(item.technical_specs);
+    setFormDescription(item.description || '');
+    setFormTechnicalSpecs(item.technical_specs || '');
     setFormMaxDiscount(item.max_discount.toString());
     setFormActive(item.active);
     setIsDialogOpen(true);
   };
 
-  const handleSave = () => {
-    if (!formName || !formCategory || !formPrice) {
-      toast({
-        title: 'Campos obrigatórios',
-        description: 'Preencha nome, categoria e preço.',
-        variant: 'destructive',
-      });
+  const handleSave = async () => {
+    if (!formName || !formPrice) {
       return;
     }
 
-    toast({
-      title: editingItem ? 'Item atualizado!' : 'Item criado!',
-      description: `O item "${formName}" foi ${editingItem ? 'atualizado' : 'criado'} com sucesso.`,
-    });
+    setIsSaving(true);
+    const itemData = {
+      name: formName,
+      category_id: formCategory || null,
+      type: formType,
+      price: parseFloat(formPrice),
+      description: formDescription || null,
+      technical_specs: formTechnicalSpecs || null,
+      max_discount: parseInt(formMaxDiscount) || 0,
+      active: formActive,
+    };
+
+    if (editingItem) {
+      await updateItem(editingItem.id, itemData);
+    } else {
+      await createItem(itemData);
+    }
+
+    setIsSaving(false);
     setIsDialogOpen(false);
     resetForm();
+  };
+
+  const handleCreateCategory = async () => {
+    if (!newCategoryName.trim()) return;
+    setIsSaving(true);
+    const result = await createCategory(newCategoryName.trim());
+    setIsSaving(false);
+    if (result.data) {
+      setFormCategory(result.data.id);
+      setNewCategoryName('');
+      setIsCategoryDialogOpen(false);
+    }
+  };
+
+  const handleToggleStatus = async (item: ItemWithCategory) => {
+    await toggleItemStatus(item.id, !item.active);
   };
 
   const formatCurrency = (value: number) => {
@@ -200,11 +153,12 @@ export default function Items() {
     }).format(value);
   };
 
-  const filteredItems = mockItems.filter((item) => {
+  const filteredItems = items.filter((item) => {
     const matchesSearch =
       item.name.toLowerCase().includes(search.toLowerCase()) ||
-      item.description.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter;
+      (item.description?.toLowerCase().includes(search.toLowerCase()) ?? false);
+    const matchesCategory =
+      categoryFilter === 'all' || item.category_id === categoryFilter;
     const matchesType = typeFilter === 'all' || item.type === typeFilter;
     return matchesSearch && matchesCategory && matchesType;
   });
@@ -219,10 +173,13 @@ export default function Items() {
             Gerencie produtos e serviços do catálogo
           </p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={(open) => {
-          setIsDialogOpen(open);
-          if (!open) resetForm();
-        }}>
+        <Dialog
+          open={isDialogOpen}
+          onOpenChange={(open) => {
+            setIsDialogOpen(open);
+            if (!open) resetForm();
+          }}
+        >
           <DialogTrigger asChild>
             <Button className="bg-gradient-primary shadow-primary hover:opacity-90">
               <Plus className="w-4 h-4 mr-2" />
@@ -247,21 +204,69 @@ export default function Items() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="category">
-                    Categoria <span className="text-destructive">*</span>
-                  </Label>
-                  <Select value={formCategory} onValueChange={setFormCategory}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map((cat) => (
-                        <SelectItem key={cat} value={cat}>
-                          {cat}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="category">Categoria</Label>
+                  <div className="flex gap-2">
+                    <Select value={formCategory} onValueChange={setFormCategory}>
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Selecione" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categoriesLoading ? (
+                          <SelectItem value="loading" disabled>
+                            Carregando...
+                          </SelectItem>
+                        ) : categories.length === 0 ? (
+                          <SelectItem value="empty" disabled>
+                            Nenhuma categoria
+                          </SelectItem>
+                        ) : (
+                          categories.map((cat) => (
+                            <SelectItem key={cat.id} value={cat.id}>
+                              {cat.name}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="icon" type="button">
+                          <FolderPlus className="w-4 h-4" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Nova Categoria</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="categoryName">Nome da Categoria</Label>
+                            <Input
+                              id="categoryName"
+                              value={newCategoryName}
+                              onChange={(e) => setNewCategoryName(e.target.value)}
+                              placeholder="Ex: Ferramentas Elétricas"
+                            />
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button
+                            variant="outline"
+                            onClick={() => setIsCategoryDialogOpen(false)}
+                          >
+                            Cancelar
+                          </Button>
+                          <Button
+                            onClick={handleCreateCategory}
+                            disabled={isSaving || !newCategoryName.trim()}
+                          >
+                            {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                            Criar
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
                 </div>
               </div>
 
@@ -363,8 +368,10 @@ export default function Items() {
               </Button>
               <Button
                 onClick={handleSave}
+                disabled={isSaving || !formName || !formPrice}
                 className="bg-gradient-primary shadow-primary hover:opacity-90"
               >
+                {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 {editingItem ? 'Salvar Alterações' : 'Criar Item'}
               </Button>
             </DialogFooter>
@@ -394,8 +401,8 @@ export default function Items() {
                 <SelectContent>
                   <SelectItem value="all">Todas Categorias</SelectItem>
                   {categories.map((cat) => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -431,7 +438,36 @@ export default function Items() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredItems.length === 0 ? (
+            {isLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell>
+                    <Skeleton className="w-10 h-10 rounded-lg" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-32" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-24" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-6 w-20" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-20 ml-auto" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-8 mx-auto" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-6 w-16" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-8 w-8" />
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : filteredItems.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
                   <div className="flex flex-col items-center gap-2">
@@ -464,7 +500,7 @@ export default function Items() {
                       </p>
                     </div>
                   </TableCell>
-                  <TableCell>{item.category}</TableCell>
+                  <TableCell>{item.category?.name || '-'}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className="font-medium">
                       {item.type === 'product' ? (
@@ -481,13 +517,17 @@ export default function Items() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right font-medium">
-                    {formatCurrency(item.price)}
+                    {formatCurrency(Number(item.price))}
                   </TableCell>
                   <TableCell className="text-center">{item.max_discount}%</TableCell>
                   <TableCell>
                     <Badge
                       variant="outline"
-                      className={item.active ? 'badge-sent' : 'badge-expired'}
+                      className={
+                        item.active
+                          ? 'border-success/50 text-success bg-success/10'
+                          : 'border-muted-foreground/50 text-muted-foreground'
+                      }
                     >
                       {item.active ? 'Ativo' : 'Inativo'}
                     </Badge>
@@ -500,15 +540,12 @@ export default function Items() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => openEditDialog(item)}
-                          className="flex items-center gap-2"
-                        >
-                          <Pencil className="w-4 h-4" />
+                        <DropdownMenuItem onClick={() => openEditDialog(item)}>
+                          <Pencil className="w-4 h-4 mr-2" />
                           Editar
                         </DropdownMenuItem>
-                        <DropdownMenuItem className="flex items-center gap-2">
-                          <Power className="w-4 h-4" />
+                        <DropdownMenuItem onClick={() => handleToggleStatus(item)}>
+                          <Power className="w-4 h-4 mr-2" />
                           {item.active ? 'Desativar' : 'Ativar'}
                         </DropdownMenuItem>
                       </DropdownMenuContent>

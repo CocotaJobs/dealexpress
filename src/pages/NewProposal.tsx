@@ -35,80 +35,25 @@ import {
   Send,
   Eye,
   ArrowLeft,
+  Loader2,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-
-// Mock items data
-const mockItems = [
-  {
-    id: '1',
-    name: 'Parafusadeira Pro X',
-    category: 'Ferramentas Elétricas',
-    type: 'product',
-    price: 450.0,
-    max_discount: 15,
-    description: 'Parafusadeira profissional com 2 baterias',
-    image_url: null,
-  },
-  {
-    id: '2',
-    name: 'Máquina CNC 3000',
-    category: 'Máquinas',
-    type: 'product',
-    price: 28500.0,
-    max_discount: 10,
-    description: 'Centro de usinagem CNC de alta precisão',
-    image_url: null,
-  },
-  {
-    id: '3',
-    name: 'Kit Ferramentas Premium',
-    category: 'Ferramentas Manuais',
-    type: 'product',
-    price: 890.0,
-    max_discount: 20,
-    description: 'Kit completo com 150 peças',
-    image_url: null,
-  },
-  {
-    id: '4',
-    name: 'Manutenção Preventiva',
-    category: 'Serviços',
-    type: 'service',
-    price: 1500.0,
-    max_discount: 5,
-    description: 'Serviço de manutenção preventiva mensal',
-    image_url: null,
-  },
-  {
-    id: '5',
-    name: 'Compressor Industrial 200L',
-    category: 'Equipamentos',
-    type: 'product',
-    price: 4200.0,
-    max_discount: 12,
-    description: 'Compressor de ar industrial 200 litros',
-    image_url: null,
-  },
-];
-
-interface ProposalItem {
-  id: string;
-  item_id: string;
-  name: string;
-  price: number;
-  quantity: number;
-  discount: number;
-  max_discount: number;
-  subtotal: number;
-}
+import { useItems } from '@/hooks/useItems';
+import { useProposals, ProposalItemFormData } from '@/hooks/useProposals';
+import { useAuth } from '@/contexts/AuthContext';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function NewProposal() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { profile } = useAuth();
+  const { items, isLoading: itemsLoading } = useItems();
+  const { createProposal, sendProposal } = useProposals();
+
   const [isItemDialogOpen, setIsItemDialogOpen] = useState(false);
   const [itemSearch, setItemSearch] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSending, setIsSending] = useState(false);
 
   // Client data
   const [clientName, setClientName] = useState('');
@@ -118,19 +63,21 @@ export default function NewProposal() {
   const [clientAddress, setClientAddress] = useState('');
 
   // Proposal items
-  const [proposalItems, setProposalItems] = useState<ProposalItem[]>([]);
+  const [proposalItems, setProposalItems] = useState<ProposalItemFormData[]>([]);
 
   // Commercial conditions
   const [paymentConditions, setPaymentConditions] = useState('');
   const [validityDays, setValidityDays] = useState(15);
 
-  const filteredItems = mockItems.filter(
+  // Filter active items only
+  const activeItems = items.filter((item) => item.active);
+  const filteredItems = activeItems.filter(
     (item) =>
       item.name.toLowerCase().includes(itemSearch.toLowerCase()) ||
-      item.category.toLowerCase().includes(itemSearch.toLowerCase())
+      (item.category?.name?.toLowerCase().includes(itemSearch.toLowerCase()) ?? false)
   );
 
-  const addItem = (item: (typeof mockItems)[0]) => {
+  const addItem = (item: (typeof activeItems)[0]) => {
     const existingItem = proposalItems.find((pi) => pi.item_id === item.id);
     if (existingItem) {
       setProposalItems(
@@ -139,7 +86,7 @@ export default function NewProposal() {
             ? {
                 ...pi,
                 quantity: pi.quantity + 1,
-                subtotal: (pi.quantity + 1) * pi.price * (1 - pi.discount / 100),
+                subtotal: (pi.quantity + 1) * pi.item_price * (1 - pi.discount / 100),
               }
             : pi
         )
@@ -148,14 +95,13 @@ export default function NewProposal() {
       setProposalItems([
         ...proposalItems,
         {
-          id: crypto.randomUUID(),
           item_id: item.id,
-          name: item.name,
-          price: item.price,
+          item_name: item.name,
+          item_price: Number(item.price),
           quantity: 1,
           discount: 0,
           max_discount: item.max_discount,
-          subtotal: item.price,
+          subtotal: Number(item.price),
         },
       ]);
     }
@@ -163,38 +109,38 @@ export default function NewProposal() {
     setItemSearch('');
   };
 
-  const updateItemQuantity = (id: string, quantity: number) => {
+  const updateItemQuantity = (item_id: string, quantity: number) => {
     if (quantity < 1) return;
     setProposalItems(
       proposalItems.map((item) =>
-        item.id === id
+        item.item_id === item_id
           ? {
               ...item,
               quantity,
-              subtotal: quantity * item.price * (1 - item.discount / 100),
+              subtotal: quantity * item.item_price * (1 - item.discount / 100),
             }
           : item
       )
     );
   };
 
-  const updateItemDiscount = (id: string, discount: number) => {
+  const updateItemDiscount = (item_id: string, discount: number) => {
     if (discount < 0 || discount > 100) return;
     setProposalItems(
       proposalItems.map((item) =>
-        item.id === id
+        item.item_id === item_id
           ? {
               ...item,
               discount,
-              subtotal: item.quantity * item.price * (1 - discount / 100),
+              subtotal: item.quantity * item.item_price * (1 - discount / 100),
             }
           : item
       )
     );
   };
 
-  const removeItem = (id: string) => {
-    setProposalItems(proposalItems.filter((item) => item.id !== id));
+  const removeItem = (item_id: string) => {
+    setProposalItems(proposalItems.filter((item) => item.item_id !== item_id));
   };
 
   const totalValue = proposalItems.reduce((sum, item) => sum + item.subtotal, 0);
@@ -213,34 +159,101 @@ export default function NewProposal() {
     return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
   };
 
+  const validateForm = () => {
+    if (!clientName.trim()) {
+      toast({
+        title: 'Campo obrigatório',
+        description: 'Preencha o nome do cliente.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+    return true;
+  };
+
   const handleSaveDraft = async () => {
-    setIsLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    toast({
-      title: 'Rascunho salvo!',
-      description: 'A proposta foi salva como rascunho.',
-    });
-    setIsLoading(false);
-    navigate('/proposals');
+    if (!validateForm()) return;
+
+    setIsSaving(true);
+    const result = await createProposal(
+      {
+        client_name: clientName.trim(),
+        client_email: clientEmail.trim() || null,
+        client_whatsapp: clientWhatsApp.trim() || null,
+        client_company: clientCompany.trim() || null,
+        client_address: clientAddress.trim() || null,
+        payment_conditions: paymentConditions.trim() || null,
+        validity_days: validityDays,
+        status: 'draft',
+      },
+      proposalItems
+    );
+    setIsSaving(false);
+
+    if (result.data) {
+      navigate('/proposals');
+    }
   };
 
   const handleSendProposal = async () => {
-    if (!clientName || !clientEmail || !clientWhatsApp || proposalItems.length === 0) {
+    if (!validateForm()) return;
+
+    if (!clientWhatsApp.trim()) {
       toast({
-        title: 'Campos obrigatórios',
-        description: 'Preencha todos os campos obrigatórios e adicione pelo menos um item.',
+        title: 'Campo obrigatório',
+        description: 'Preencha o WhatsApp do cliente para enviar a proposta.',
         variant: 'destructive',
       });
       return;
     }
 
-    setIsLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    toast({
-      title: 'Proposta enviada!',
-      description: 'A proposta foi enviada via WhatsApp para o cliente.',
-    });
-    setIsLoading(false);
+    if (proposalItems.length === 0) {
+      toast({
+        title: 'Sem itens',
+        description: 'Adicione pelo menos um item à proposta.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!profile?.whatsapp_connected) {
+      toast({
+        title: 'WhatsApp não conectado',
+        description: 'Conecte seu WhatsApp antes de enviar propostas.',
+        variant: 'destructive',
+      });
+      navigate('/whatsapp');
+      return;
+    }
+
+    setIsSending(true);
+
+    // First create the proposal
+    const result = await createProposal(
+      {
+        client_name: clientName.trim(),
+        client_email: clientEmail.trim() || null,
+        client_whatsapp: clientWhatsApp.trim() || null,
+        client_company: clientCompany.trim() || null,
+        client_address: clientAddress.trim() || null,
+        payment_conditions: paymentConditions.trim() || null,
+        validity_days: validityDays,
+        status: 'draft',
+      },
+      proposalItems
+    );
+
+    if (result.data) {
+      // Then mark it as sent
+      await sendProposal(result.data.id);
+      // TODO: Actually send via WhatsApp using Edge Function
+      toast({
+        title: 'Proposta criada!',
+        description: 'A geração de PDF e envio via WhatsApp será implementado em breve.',
+      });
+    }
+
+    setIsSending(false);
     navigate('/proposals');
   };
 
@@ -286,9 +299,7 @@ export default function NewProposal() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="clientEmail">
-                    Email <span className="text-destructive">*</span>
-                  </Label>
+                  <Label htmlFor="clientEmail">Email</Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
@@ -304,9 +315,7 @@ export default function NewProposal() {
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="clientWhatsApp">
-                    WhatsApp <span className="text-destructive">*</span>
-                  </Label>
+                  <Label htmlFor="clientWhatsApp">WhatsApp</Label>
                   <div className="relative">
                     <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
@@ -378,34 +387,51 @@ export default function NewProposal() {
                         />
                       </div>
                       <div className="max-h-[400px] overflow-y-auto space-y-2">
-                        {filteredItems.map((item) => (
-                          <div
-                            key={item.id}
-                            onClick={() => addItem(item)}
-                            className="p-4 rounded-lg border border-border hover:border-primary/50 hover:bg-accent cursor-pointer transition-colors"
-                          >
-                            <div className="flex items-start justify-between">
-                              <div>
-                                <p className="font-medium">{item.name}</p>
-                                <p className="text-sm text-muted-foreground">{item.category}</p>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  {item.description}
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                <p className="font-semibold text-primary">
-                                  {formatCurrency(item.price)}
-                                </p>
-                                <Badge
-                                  variant="outline"
-                                  className="text-xs mt-1"
-                                >
-                                  {item.type === 'product' ? 'Produto' : 'Serviço'}
-                                </Badge>
+                        {itemsLoading ? (
+                          Array.from({ length: 3 }).map((_, i) => (
+                            <div key={i} className="p-4 rounded-lg border border-border">
+                              <div className="flex items-start justify-between">
+                                <div className="space-y-2">
+                                  <Skeleton className="h-4 w-32" />
+                                  <Skeleton className="h-3 w-24" />
+                                </div>
+                                <Skeleton className="h-6 w-20" />
                               </div>
                             </div>
+                          ))
+                        ) : filteredItems.length === 0 ? (
+                          <div className="py-8 text-center text-muted-foreground">
+                            <p>Nenhum item encontrado</p>
                           </div>
-                        ))}
+                        ) : (
+                          filteredItems.map((item) => (
+                            <div
+                              key={item.id}
+                              onClick={() => addItem(item)}
+                              className="p-4 rounded-lg border border-border hover:border-primary/50 hover:bg-accent cursor-pointer transition-colors"
+                            >
+                              <div className="flex items-start justify-between">
+                                <div>
+                                  <p className="font-medium">{item.name}</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    {item.category?.name || 'Sem categoria'}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    {item.description}
+                                  </p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="font-semibold text-primary">
+                                    {formatCurrency(Number(item.price))}
+                                  </p>
+                                  <Badge variant="outline" className="text-xs mt-1">
+                                    {item.type === 'product' ? 'Produto' : 'Serviço'}
+                                  </Badge>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
                       </div>
                     </div>
                   </DialogContent>
@@ -432,20 +458,20 @@ export default function NewProposal() {
                   </TableHeader>
                   <TableBody>
                     {proposalItems.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell className="font-medium">{item.name}</TableCell>
+                      <TableRow key={item.item_id}>
+                        <TableCell className="font-medium">{item.item_name}</TableCell>
                         <TableCell>
                           <Input
                             type="number"
                             min="1"
                             value={item.quantity}
                             onChange={(e) =>
-                              updateItemQuantity(item.id, parseInt(e.target.value) || 1)
+                              updateItemQuantity(item.item_id, parseInt(e.target.value) || 1)
                             }
                             className="w-20 h-8"
                           />
                         </TableCell>
-                        <TableCell>{formatCurrency(item.price)}</TableCell>
+                        <TableCell>{formatCurrency(item.item_price)}</TableCell>
                         <TableCell>
                           <div className="relative">
                             <Input
@@ -454,13 +480,15 @@ export default function NewProposal() {
                               max="100"
                               value={item.discount}
                               onChange={(e) =>
-                                updateItemDiscount(item.id, parseFloat(e.target.value) || 0)
+                                updateItemDiscount(item.item_id, parseFloat(e.target.value) || 0)
                               }
                               className={`w-20 h-8 ${
-                                item.discount > item.max_discount ? 'border-warning' : ''
+                                item.max_discount && item.discount > item.max_discount
+                                  ? 'border-warning'
+                                  : ''
                               }`}
                             />
-                            {item.discount > item.max_discount && (
+                            {item.max_discount && item.discount > item.max_discount && (
                               <AlertTriangle className="absolute -right-6 top-1/2 -translate-y-1/2 w-4 h-4 text-warning" />
                             )}
                           </div>
@@ -473,7 +501,7 @@ export default function NewProposal() {
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8 text-destructive hover:text-destructive"
-                            onClick={() => removeItem(item.id)}
+                            onClick={() => removeItem(item.item_id)}
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
@@ -548,12 +576,16 @@ export default function NewProposal() {
                 <Button
                   className="w-full bg-gradient-primary shadow-primary hover:opacity-90"
                   onClick={handleSendProposal}
-                  disabled={isLoading}
+                  disabled={isSaving || isSending}
                 >
-                  <Send className="w-4 h-4 mr-2" />
+                  {isSending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4 mr-2" />
+                  )}
                   Enviar via WhatsApp
                 </Button>
-                <Button variant="outline" className="w-full" disabled={isLoading}>
+                <Button variant="outline" className="w-full" disabled={isSaving || isSending}>
                   <Eye className="w-4 h-4 mr-2" />
                   Pré-visualizar
                 </Button>
@@ -561,9 +593,13 @@ export default function NewProposal() {
                   variant="ghost"
                   className="w-full"
                   onClick={handleSaveDraft}
-                  disabled={isLoading}
+                  disabled={isSaving || isSending}
                 >
-                  <Save className="w-4 h-4 mr-2" />
+                  {isSaving ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4 mr-2" />
+                  )}
                   Salvar Rascunho
                 </Button>
               </div>
