@@ -135,12 +135,29 @@ export function usePdfGeneration() {
   const downloadPdf = async (proposalId: string) => {
     const result = await generatePdf(proposalId);
     if (result?.pdfUrl) {
-      const a = document.createElement('a');
-      a.href = result.pdfUrl;
-      a.download = result.fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      try {
+        // Fetch the PDF as blob to avoid cross-origin download issues
+        const response = await fetch(result.pdfUrl);
+        const blob = await response.blob();
+        
+        // Create object URL from blob
+        const blobUrl = URL.createObjectURL(blob);
+        
+        // Create and click download link
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = result.fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        
+        // Clean up object URL
+        URL.revokeObjectURL(blobUrl);
+      } catch (error) {
+        console.error('Download via blob failed, opening in new tab:', error);
+        // Fallback: open in new tab if download fails
+        window.open(result.pdfUrl, '_blank');
+      }
     }
     return result;
   };
