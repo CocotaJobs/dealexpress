@@ -12,28 +12,10 @@ import {
   DialogTrigger,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { Upload, FileText, CheckCircle, Clock, X, Info } from 'lucide-react';
+import { Upload, FileText, CheckCircle, Clock, X, Info, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-
-// Mock templates data
-const mockTemplates = [
-  {
-    id: '1',
-    name: 'Template Proposta Padrão v2',
-    file_url: 'templates/proposta-padrao-v2.docx',
-    is_active: true,
-    uploaded_by: 'Carlos Silva',
-    created_at: '2025-01-15T10:30:00',
-  },
-  {
-    id: '2',
-    name: 'Template Proposta Padrão v1',
-    file_url: 'templates/proposta-padrao-v1.docx',
-    is_active: false,
-    uploaded_by: 'Carlos Silva',
-    created_at: '2024-11-20T14:15:00',
-  },
-];
+import { useTemplates } from '@/hooks/useTemplates';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const dynamicFields = [
   { field: '{{cliente_nome}}', description: 'Nome completo do cliente' },
@@ -52,9 +34,12 @@ const dynamicFields = [
 
 export default function Templates() {
   const { toast } = useToast();
+  const { templates, isLoading, uploadTemplate, activateTemplate, downloadTemplate } = useTemplates();
+
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   const formatDate = (dateString: string) => {
     return new Intl.DateTimeFormat('pt-BR', {
@@ -81,7 +66,7 @@ export default function Templates() {
     }
   };
 
-  const handleUpload = () => {
+  const handleUpload = async () => {
     if (!templateName || !selectedFile) {
       toast({
         title: 'Campos obrigatórios',
@@ -91,17 +76,27 @@ export default function Templates() {
       return;
     }
 
-    toast({
-      title: 'Template enviado!',
-      description: 'O novo template foi ativado com sucesso.',
-    });
-    setIsUploadDialogOpen(false);
-    setTemplateName('');
-    setSelectedFile(null);
+    setIsUploading(true);
+    const result = await uploadTemplate(templateName, selectedFile);
+    setIsUploading(false);
+
+    if (result.data) {
+      setIsUploadDialogOpen(false);
+      setTemplateName('');
+      setSelectedFile(null);
+    }
   };
 
-  const activeTemplate = mockTemplates.find((t) => t.is_active);
-  const inactiveTemplates = mockTemplates.filter((t) => !t.is_active);
+  const handleDownload = async (filePath: string, name: string) => {
+    await downloadTemplate(filePath, `${name}.docx`);
+  };
+
+  const handleActivate = async (id: string) => {
+    await activateTemplate(id);
+  };
+
+  const activeTemplate = templates.find((t) => t.is_active);
+  const inactiveTemplates = templates.filter((t) => !t.is_active);
 
   return (
     <div className="p-6 space-y-6 animate-in">
@@ -186,9 +181,14 @@ export default function Templates() {
               </Button>
               <Button
                 onClick={handleUpload}
+                disabled={isUploading}
                 className="bg-gradient-primary shadow-primary hover:opacity-90"
               >
-                <Upload className="w-4 h-4 mr-2" />
+                {isUploading ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4 mr-2" />
+                )}
                 Fazer Upload
               </Button>
             </DialogFooter>
@@ -210,7 +210,17 @@ export default function Templates() {
               </div>
             </CardHeader>
             <CardContent>
-              {activeTemplate ? (
+              {isLoading ? (
+                <div className="space-y-4">
+                  <div className="p-4 rounded-lg bg-muted/50 flex items-center gap-4">
+                    <Skeleton className="w-12 h-12 rounded-lg" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-3 w-24" />
+                    </div>
+                  </div>
+                </div>
+              ) : activeTemplate ? (
                 <div className="space-y-4">
                   <div className="p-4 rounded-lg bg-muted/50 flex items-center gap-4">
                     <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -219,7 +229,7 @@ export default function Templates() {
                     <div className="flex-1">
                       <p className="font-medium">{activeTemplate.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        Enviado por {activeTemplate.uploaded_by}
+                        Enviado por {activeTemplate.uploader?.name || 'Desconhecido'}
                       </p>
                     </div>
                   </div>
@@ -227,7 +237,11 @@ export default function Templates() {
                     <Clock className="w-4 h-4" />
                     Ativado em {formatDate(activeTemplate.created_at)}
                   </div>
-                  <Button variant="outline" className="w-full">
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => handleDownload(activeTemplate.file_path, activeTemplate.name)}
+                  >
                     <FileText className="w-4 h-4 mr-2" />
                     Baixar Template
                   </Button>
@@ -251,7 +265,22 @@ export default function Templates() {
               <CardDescription>Histórico de templates desativados</CardDescription>
             </CardHeader>
             <CardContent>
-              {inactiveTemplates.length === 0 ? (
+              {isLoading ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 2 }).map((_, i) => (
+                    <div key={i} className="flex items-center justify-between p-3 rounded-lg border">
+                      <div className="flex items-center gap-3">
+                        <Skeleton className="w-5 h-5" />
+                        <div className="space-y-1">
+                          <Skeleton className="h-4 w-24" />
+                          <Skeleton className="h-3 w-20" />
+                        </div>
+                      </div>
+                      <Skeleton className="h-8 w-16" />
+                    </div>
+                  ))}
+                </div>
+              ) : inactiveTemplates.length === 0 ? (
                 <div className="py-6 text-center text-muted-foreground text-sm">
                   Nenhum template anterior
                 </div>
@@ -271,9 +300,22 @@ export default function Templates() {
                           </p>
                         </div>
                       </div>
-                      <Button variant="ghost" size="sm">
-                        Baixar
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDownload(template.file_path, template.name)}
+                        >
+                          Baixar
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleActivate(template.id)}
+                        >
+                          Ativar
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
