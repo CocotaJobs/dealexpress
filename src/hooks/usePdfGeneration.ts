@@ -7,9 +7,43 @@ export interface PdfGenerationResult {
   fileName: string;
 }
 
+const LOADING_HTML = `
+  <html>
+    <body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#f5f5f5;">
+      <div style="text-align:center;">
+        <p style="font-size:18px;color:#333;">Gerando PDF...</p>
+        <p style="color:#666;">Aguarde um momento</p>
+      </div>
+    </body>
+  </html>
+`;
+
+const ERROR_HTML = `
+  <html>
+    <body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#f5f5f5;">
+      <div style="text-align:center;">
+        <p style="font-size:18px;color:#d32f2f;">Erro ao gerar PDF</p>
+        <p style="color:#666;">Você pode fechar esta aba.</p>
+      </div>
+    </body>
+  </html>
+`;
+
 export function usePdfGeneration() {
   const { toast } = useToast();
   const [isGenerating, setIsGenerating] = useState(false);
+
+  /**
+   * Helper to open a preview window immediately (before any async operation).
+   * Call this BEFORE any `await` in your click handler to avoid popup blocking.
+   */
+  const openPdfPreviewWindow = (): Window | null => {
+    const newWindow = window.open('', '_blank');
+    if (newWindow) {
+      newWindow.document.write(LOADING_HTML);
+    }
+    return newWindow;
+  };
 
   const generatePdf = async (proposalId: string): Promise<PdfGenerationResult | null> => {
     setIsGenerating(true);
@@ -55,31 +89,44 @@ export function usePdfGeneration() {
     }
   };
 
-  const previewPdf = async (proposalId: string) => {
-    // Abre a janela ANTES da operação async (permitido pelo navegador)
-    const newWindow = window.open('', '_blank');
+  /**
+   * Generate and preview PDF.
+   * @param proposalId - The proposal ID
+   * @param existingWindow - Optional pre-opened window (use openPdfPreviewWindow() before any await)
+   */
+  const previewPdf = async (proposalId: string, existingWindow?: Window | null) => {
+    // Use existing window or try to open a new one
+    const targetWindow = existingWindow ?? window.open('', '_blank');
     
-    if (newWindow) {
-      newWindow.document.write(`
-        <html>
-          <body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#f5f5f5;">
-            <div style="text-align:center;">
-              <p style="font-size:18px;color:#333;">Gerando PDF...</p>
-              <p style="color:#666;">Aguarde um momento</p>
-            </div>
-          </body>
-        </html>
-      `);
+    // If no window and we tried to open one, popup was blocked
+    if (!targetWindow && !existingWindow) {
+      toast({
+        title: 'Popup bloqueado',
+        description: 'Permita popups para este site ou use "Baixar PDF".',
+        variant: 'destructive',
+      });
+      return null;
+    }
+    
+    // Show loading if we just opened the window
+    if (targetWindow && !existingWindow) {
+      targetWindow.document.write(LOADING_HTML);
     }
     
     const result = await generatePdf(proposalId);
     
-    if (result?.pdfUrl && newWindow) {
-      // Redireciona a janela já aberta para o PDF
-      newWindow.location.href = result.pdfUrl;
-    } else if (newWindow) {
-      // Se falhou, fecha a janela em branco
-      newWindow.close();
+    if (result?.pdfUrl && targetWindow) {
+      targetWindow.location.href = result.pdfUrl;
+    } else if (targetWindow) {
+      // Show error message in the window
+      try {
+        targetWindow.document.open();
+        targetWindow.document.write(ERROR_HTML);
+        targetWindow.document.close();
+      } catch {
+        // If we can't write, just close
+        targetWindow.close();
+      }
     }
     
     return result;
@@ -103,5 +150,6 @@ export function usePdfGeneration() {
     generatePdf,
     previewPdf,
     downloadPdf,
+    openPdfPreviewWindow,
   };
 }
