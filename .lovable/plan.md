@@ -1,165 +1,119 @@
 
-# Integração de Templates .docx Customizados para Geração de PDF
 
-## Objetivo
-Modificar a Edge Function `generate-pdf` para baixar e processar o template .docx ativo da organização, substituindo os campos dinâmicos pelos valores reais da proposta, e gerando um PDF formatado a partir do documento Word personalizado.
+# Correção: Rotas 404 + Qualidade do PDF Gerado
 
-## Situação Atual
+## Problemas Identificados
 
-- Templates .docx são armazenados no bucket `templates` no Storage
-- A tabela `templates` guarda metadados (nome, caminho, organização, ativo)
-- A Edge Function `generate-pdf` usa um HTML hardcoded, ignorando os templates customizados
-- Campos dinâmicos documentados: `{{cliente_nome}}`, `{{tabela_itens}}`, `{{valor_total}}`, etc.
+### 1. Erro 404 nas Rotas de Proposta
+As rotas `/proposals/:id` (visualizar) e `/proposals/:id/edit` (editar) **não existem** no `App.tsx`, causando erro 404 ao clicar nos links.
 
-## Fluxo Proposto
+### 2. PDF Não Parece com o Template DOCX
+O pipeline atual de geração de PDF tem duas limitações:
+- **Mammoth.js** converte DOCX → HTML muito simplificado (perde formatação rica)
+- **`generatePdfFromHtmlContent()`** é primitivo - apenas extrai texto bruto e gera um PDF básico com fonte Courier
 
-```text
-+------------------+     +------------------+     +------------------+     +------------------+
-|   Buscar         |     |   Baixar .docx   |     |   Substituir     |     |   Converter      |
-|   Template Ativo |---->|   do Storage     |---->|   Campos         |---->|   para PDF       |
-+------------------+     +------------------+     +------------------+     +------------------+
-        |                        |                        |                        |
-  Query na tabela           Download do            Usar biblioteca          Gerar PDF e
-  templates                 arquivo               docx-templates           salvar no Storage
-```
+Resultado: o PDF gerado é basicamente texto plano, ignorando fontes, cores, tabelas e layout do template original.
 
-## Tratamento de Campos Não Utilizados
+## Solução Proposta
 
-**Comportamento para campos ausentes no template:**
-- Se o template não contiver `{{cliente_email}}`, simplesmente não será substituído nada
-- Se o template contiver `{{cliente_email}}` mas o valor for vazio/null, o placeholder será removido (substituído por string vazia)
-- A tabela de itens `{{tabela_itens}}` será gerada dinamicamente como texto formatado
+### Parte 1: Criar Páginas de Visualização/Edição
 
-## Arquivos a Modificar
+Criar duas novas páginas e adicionar rotas:
 
-### 1. Edge Function: `supabase/functions/generate-pdf/index.ts`
+**Arquivos novos:**
+- `src/pages/ViewProposal.tsx` - página de visualização de proposta
+- `src/pages/EditProposal.tsx` - página de edição (baseada em NewProposal)
 
-Mudanças principais:
+**Modificar:**
+- `src/App.tsx` - adicionar rotas:
+  - `/proposals/:id` → ViewProposal
+  - `/proposals/:id/edit` → EditProposal
 
-1. **Buscar template ativo** da organização:
-```typescript
-const { data: template } = await supabaseAdmin
-  .from('templates')
-  .select('file_path')
-  .eq('organization_id', proposal.organization_id)
-  .eq('is_active', true)
-  .single();
-```
+### Parte 2: Melhorar Qualidade do PDF
 
-2. **Baixar arquivo .docx** do Storage:
-```typescript
-const { data: templateFile } = await supabaseAdmin
-  .storage
-  .from('templates')
-  .download(template.file_path);
-```
+**Estratégia:** Usar uma API de conversão profissional para transformar HTML em PDF com alta qualidade.
 
-3. **Processar o .docx** substituindo campos dinâmicos:
-   - Usar biblioteca `docx-templates` (compatível com Deno via esm.sh)
-   - Mapear todos os campos para valores da proposta
+Opções avaliadas:
+1. **Gotenberg** - requer setup de container Docker
+2. **API externa gratuita** - limitações de uso
+3. **pdf-lib + HTML melhor estruturado** - mais controle, sem dependência externa
 
-4. **Converter para PDF**:
-   - Usar `html2pdf` ou similar via API externa
-   - Alternativa: converter docx para HTML primeiro, depois para PDF
+**Solução escolhida:** Melhorar significativamente o HTML gerado pelo mammoth e usar uma função de geração de PDF mais robusta com `pdf-lib`.
 
-5. **Fallback**: Se não houver template ativo, usar o HTML padrão atual
+**Modificações em `supabase/functions/generate-pdf/index.ts`:**
 
-## Mapeamento de Campos Dinâmicos
+1. **Melhorar conversão HTML**:
+   - Adicionar estilos CSS inline mais ricos
+   - Preservar estrutura de tabelas
+   - Manter formatação de cabeçalhos
 
-| Campo | Valor |
-|-------|-------|
-| `{{cliente_nome}}` | `proposal.client_name` |
-| `{{cliente_email}}` | `proposal.client_email \|\| ''` |
-| `{{cliente_whatsapp}}` | `proposal.client_whatsapp \|\| ''` |
-| `{{cliente_empresa}}` | `proposal.client_company \|\| ''` |
-| `{{cliente_endereco}}` | `proposal.client_address \|\| ''` |
-| `{{data}}` | Data formatada (dd/mm/yyyy) |
-| `{{numero_proposta}}` | `proposal.proposal_number` |
-| `{{vendedor_nome}}` | `vendor.name` |
-| `{{vendedor_email}}` | `vendor.email` |
-| `{{empresa_nome}}` | `organization.name` |
-| `{{tabela_itens}}` | Texto formatado com lista de itens |
-| `{{valor_total}}` | Valor total formatado (R$ X.XXX,XX) |
-| `{{condicoes_pagamento}}` | `proposal.payment_conditions \|\| ''` |
-| `{{validade_proposta}}` | `proposal.expires_at` formatado |
-| `{{validade_dias}}` | `proposal.validity_days` |
+2. **Usar pdf-lib** para gerar PDF de melhor qualidade:
+   - Suporte a múltiplas páginas
+   - Fontes embutidas
+   - Melhor controle de layout
+
+3. **Alternativa**: Usar API gratuita como `html2pdf.app` que aceita HTML e retorna PDF formatado
 
 ## Detalhes Técnicos
 
-### Biblioteca para Processar DOCX
+### Nova Rota: ViewProposal.tsx
 
-Usaremos `docx-templates` via esm.sh:
-```typescript
-import createReport from 'https://esm.sh/docx-templates@4.11.4';
-```
+Exibirá:
+- Dados do cliente
+- Tabela de itens
+- Valor total
+- Status da proposta
+- Botões de ação (Editar, Baixar PDF, Enviar)
 
-Esta biblioteca:
-- Lê arquivos .docx
-- Substitui placeholders `{campo}` ou `{{campo}}`
-- Retorna o .docx modificado como Buffer
+### Nova Rota: EditProposal.tsx
 
-### Conversão DOCX para PDF
+- Carrega dados existentes da proposta
+- Permite modificar cliente, itens e condições
+- Salva alterações no banco
 
-**Opção escolhida**: API CloudConvert ou LibreOffice Online
-
-Como Deno Edge Functions não têm LibreOffice instalado, usaremos uma API externa gratuita ou converteremos para HTML primeiro:
-
-1. **Mammoth.js** para DOCX -> HTML
-2. **Puppeteer/html2pdf** para HTML -> PDF
-
-Alternativa mais simples:
-- Extrair texto do DOCX processado
-- Gerar PDF usando o método atual (básico porém funcional)
-
-### Formato da Tabela de Itens
+### Melhorias na Edge Function
 
 ```text
-ITENS DA PROPOSTA
------------------
-1. Produto A
-   Qtd: 2 x R$ 199,90 = R$ 399,80
+Fluxo Atual (problema):
+DOCX → Mammoth → HTML simples → Texto bruto → PDF feio
 
-2. Serviço B  
-   Qtd: 1 x R$ 500,00 (-10%) = R$ 450,00
-
------------------
-TOTAL: R$ 849,80
+Fluxo Proposto:
+DOCX → Mammoth → HTML estilizado → pdf-lib → PDF formatado
 ```
 
-## Implementação Passo a Passo
+**Importação adicional:**
+```typescript
+import { PDFDocument, StandardFonts, rgb } from 'https://esm.sh/pdf-lib@1.17.1';
+```
 
-1. **Importar bibliotecas** necessárias no Deno (PizZip, docx-templates, mammoth)
+**Nova função `generatePdfWithPdfLib()`:**
+- Processa o HTML/texto de forma estruturada
+- Cria páginas A4
+- Aplica fontes legíveis (Helvetica)
+- Mantém layout com margens adequadas
+- Suporta quebras de página automáticas
 
-2. **Criar função `processDocxTemplate`**:
-   - Recebe: Buffer do .docx + dados da proposta
-   - Retorna: Buffer do .docx processado
+## Arquivos a Criar/Modificar
 
-3. **Criar função `convertDocxToHtml`**:
-   - Usa mammoth.js para converter
-   - Retorna: HTML string
-
-4. **Modificar fluxo principal**:
-   - Tentar usar template customizado
-   - Se falhar, usar HTML padrão (fallback)
-
-5. **Atualizar geração de PDF**:
-   - Usar HTML do docx convertido
-   - Manter método de geração atual
-
-## Considerações
-
-- **Performance**: O processamento adiciona ~1-2 segundos
-- **Compatibilidade**: Suporta .docx criados no Word, Google Docs, LibreOffice
-- **Limitações**: Imagens no template podem não ser preservadas na conversão para PDF simples
-- **Fallback**: Se não houver template ativo, usa o template HTML padrão do sistema
+| Arquivo | Ação | Descrição |
+|---------|------|-----------|
+| `src/pages/ViewProposal.tsx` | Criar | Página de visualização |
+| `src/pages/EditProposal.tsx` | Criar | Página de edição |
+| `src/App.tsx` | Modificar | Adicionar rotas |
+| `supabase/functions/generate-pdf/index.ts` | Modificar | Melhorar geração de PDF |
+| `src/hooks/useProposals.ts` | Modificar | Adicionar função `updateProposal` |
 
 ## Resultado Esperado
 
-1. Admin faz upload de template .docx personalizado com os campos `{{campo}}`
-2. Ao gerar PDF de uma proposta, o sistema:
-   - Baixa o template .docx ativo
-   - Substitui todos os campos pelos valores reais
-   - Campos não preenchidos ficam vazios (não mostra `{{campo}}`)
-   - Gera PDF mantendo a formatação básica do documento
-3. PDF é salvo no Storage e link atualizado na proposta
+1. **Rotas funcionando**: Clicar em "Visualizar" e "Editar" abre as páginas corretas
+2. **PDF melhor qualidade**: Documento gerado mantém estrutura, fontes e layout mais próximo do template
+3. **Edição funcional**: Possível modificar propostas em rascunho
+
+## Limitações
+
+- A conversão DOCX → PDF em Edge Functions sem LibreOffice sempre terá perdas de formatação
+- Para 100% de fidelidade ao template Word, seria necessário:
+  - API externa paga (CloudConvert, ConvertAPI)
+  - Ou servidor com LibreOffice instalado
+- A solução proposta melhora significativamente a qualidade mas não será pixel-perfect
 
