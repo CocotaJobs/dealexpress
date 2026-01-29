@@ -1,136 +1,101 @@
 
-# Correção: Download de PDF Bloqueado ou Não Iniciado
+# Plano: Data por Extenso e Limpeza de Dados Mock
 
-## Diagnóstico
+## Resumo
 
-Após investigação detalhada com o browser automatizado:
+Este plano implementa duas mudanças:
+1. **Campo de data por extenso dinâmica** - Adicionar um campo `{{data_extenso}}` nos templates de proposta que exibe a data atual no formato "29 de Janeiro de 2026"
+2. **Limpeza de dados mock** - Remover todos os dados de teste/exemplo do banco de dados para deixar o app limpo
 
-1. **A Edge Function `generate-pdf` está funcionando corretamente** - Confirmado com status 200 e URL válida retornada
-2. **O toast de sucesso aparece** - "PDF gerado! O arquivo foi criado com sucesso"
-3. **O problema está no download** - O navegador pode estar bloqueando o download programático
+---
 
-O código atual de download:
-```typescript
-const a = document.createElement('a');
-a.href = result.pdfUrl;
-a.download = result.fileName;
-a.click();
-```
+## 1. Campo de Data por Extenso
 
-Este padrão pode falhar porque:
-- O download acontece **após operações assíncronas** (geração do PDF)
-- Alguns navegadores bloqueiam downloads iniciados fora do contexto de clique direto do usuário
-- O atributo `download` em links cross-origin (Supabase Storage) pode não funcionar como esperado
+### O que será feito
 
-## Solução Proposta
+Adicionar suporte a um novo campo dinâmico `{{data_extenso}}` no sistema de geração de PDF que sempre exibirá a **data atual** no formato por extenso em português.
 
-### 1. Para ViewProposal - Download direto via fetch + blob
+**Exemplo:** `29 de Janeiro de 2026`
 
-Modificar `downloadPdf` para baixar o arquivo como blob e criar um Object URL local, garantindo que o download funcione:
-
-```typescript
-const downloadPdf = async (proposalId: string) => {
-  const result = await generatePdf(proposalId);
-  if (result?.pdfUrl) {
-    try {
-      // Fetch the PDF as blob
-      const response = await fetch(result.pdfUrl);
-      const blob = await response.blob();
-      
-      // Create object URL from blob
-      const blobUrl = URL.createObjectURL(blob);
-      
-      // Create and click download link
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = result.fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      
-      // Clean up object URL
-      URL.revokeObjectURL(blobUrl);
-    } catch (error) {
-      // Fallback: open in new tab if download fails
-      window.open(result.pdfUrl, '_blank');
-    }
-  }
-  return result;
-};
-```
-
-### 2. Alternativa mais simples - Abrir em nova aba
-
-Se o download continuar problemático, podemos simplesmente abrir o PDF em uma nova aba:
-
-```typescript
-const downloadPdf = async (proposalId: string) => {
-  const result = await generatePdf(proposalId);
-  if (result?.pdfUrl) {
-    // Open PDF in new tab - user can save from there
-    window.open(result.pdfUrl, '_blank');
-  }
-  return result;
-};
-```
-
-**Importante**: Esta abordagem também pode ser bloqueada pelo Chrome por ser chamada após `await`. Para resolver:
-
-### 3. Solução completa - Mesma abordagem do preview
-
-Aplicar a mesma estratégia do preview: abrir a aba **antes** da operação assíncrona:
-
-```typescript
-const downloadPdf = async (proposalId: string, preOpenedWindow?: Window | null) => {
-  const result = await generatePdf(proposalId);
-  
-  if (result?.pdfUrl) {
-    if (preOpenedWindow) {
-      // Redirect pre-opened window to PDF
-      preOpenedWindow.location.href = result.pdfUrl;
-    } else {
-      // Try to fetch and download as blob
-      try {
-        const response = await fetch(result.pdfUrl);
-        const blob = await response.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        
-        const a = document.createElement('a');
-        a.href = blobUrl;
-        a.download = result.fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        
-        URL.revokeObjectURL(blobUrl);
-      } catch {
-        // Fallback: show toast with link
-        toast({
-          title: 'PDF pronto para download',
-          description: 'Clique aqui para baixar o PDF.',
-          action: <a href={result.pdfUrl} download={result.fileName}>Baixar</a>
-        });
-      }
-    }
-  }
-  
-  return result;
-};
-```
-
-## Arquivos a Modificar
+### Alterações técnicas
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/hooks/usePdfGeneration.ts` | Modificar `downloadPdf` para usar blob/fetch ou abrir nova aba |
+| `supabase/functions/generate-pdf/index.ts` | Adicionar função `formatDateExtended()` e incluir campo `data_extenso` nos dados do template |
 
-## Comportamento Esperado Após Correção
+### Nova função helper
 
-1. Usuário clica "Baixar PDF"
-2. Botão mostra spinner de loading (~5 segundos)
-3. Toast de sucesso aparece
-4. **O arquivo PDF é baixado automaticamente** ou **abre em nova aba para o usuário salvar**
+```typescript
+const formatDateExtended = (): string => {
+  const months = [
+    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+  ];
+  const now = new Date();
+  const day = now.getDate();
+  const month = months[now.getMonth()];
+  const year = now.getFullYear();
+  return `${day} de ${month} de ${year}`;
+};
+```
 
-## Recomendação
+### Campos disponíveis após a mudança
 
-Sugiro implementar a **solução com fetch + blob** como primeira opção, com fallback para abrir em nova aba. Isso garante compatibilidade máxima com diferentes navegadores.
+Os templates `.docx` poderão usar:
+- `{{data_extenso}}` - Data atual por extenso (ex: "29 de Janeiro de 2026")
+- `{{data}}` - Data de criação da proposta (DD/MM/YYYY)
+- Todos os outros campos existentes
+
+---
+
+## 2. Limpeza de Dados Mock
+
+### Dados atuais no banco
+
+| Tabela | Quantidade | Dados |
+|--------|------------|-------|
+| proposals | 4 | Propostas de teste (Cliente Teste PDF, João, etc.) |
+| proposal_items | - | Itens dessas propostas |
+| items | 1 | "Retífica Industrial X500" |
+| templates | 2 | Template Teste 1 e 2 |
+| categories | 0 | Vazio |
+| organizations | 1 | Sua organização (manter) |
+| profiles | 1 | Seu perfil (manter) |
+
+### O que será removido
+
+Executarei **queries SQL** para limpar:
+1. Todas as propostas de teste
+2. Todos os itens de proposta
+3. Todos os itens do catálogo
+4. Todos os templates de teste
+
+### O que será mantido
+
+- **Seu perfil de usuário** - Necessário para login
+- **Sua organização** - Vinculada ao seu usuário
+- **Estrutura das tabelas** - Intacta e pronta para seus dados
+
+---
+
+## Resumo da Implementação
+
+1. Atualizar Edge Function `generate-pdf` com a nova função de data por extenso
+2. Executar SQL para limpar dados mock do banco
+3. Testar geração de PDF com o novo campo
+
+---
+
+## Uso do Campo Data por Extenso
+
+Após a implementação, nos seus templates `.docx` você poderá usar:
+
+```
+{{data_extenso}}
+```
+
+E isso será substituído automaticamente pela data atual, por exemplo:
+
+```
+29 de Janeiro de 2026
+```
