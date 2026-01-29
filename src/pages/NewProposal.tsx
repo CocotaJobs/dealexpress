@@ -36,12 +36,15 @@ import {
   Eye,
   ArrowLeft,
   Loader2,
+  FileDown,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useItems } from '@/hooks/useItems';
 import { useProposals, ProposalItemFormData } from '@/hooks/useProposals';
+import { usePdfGeneration } from '@/hooks/usePdfGeneration';
 import { useAuth } from '@/contexts/AuthContext';
 import { Skeleton } from '@/components/ui/skeleton';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function NewProposal() {
   const navigate = useNavigate();
@@ -49,11 +52,13 @@ export default function NewProposal() {
   const { profile } = useAuth();
   const { items, isLoading: itemsLoading } = useItems();
   const { createProposal, sendProposal } = useProposals();
+  const { isGenerating, generatePdf, previewPdf } = usePdfGeneration();
 
   const [isItemDialogOpen, setIsItemDialogOpen] = useState(false);
   const [itemSearch, setItemSearch] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isPreviewing, setIsPreviewing] = useState(false);
 
   // Client data
   const [clientName, setClientName] = useState('');
@@ -195,6 +200,43 @@ export default function NewProposal() {
     }
   };
 
+  const handlePreview = async () => {
+    if (!validateForm()) return;
+
+    if (proposalItems.length === 0) {
+      toast({
+        title: 'Sem itens',
+        description: 'Adicione pelo menos um item à proposta.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsPreviewing(true);
+
+    // First save the proposal
+    const result = await createProposal(
+      {
+        client_name: clientName.trim(),
+        client_email: clientEmail.trim() || null,
+        client_whatsapp: clientWhatsApp.trim() || null,
+        client_company: clientCompany.trim() || null,
+        client_address: clientAddress.trim() || null,
+        payment_conditions: paymentConditions.trim() || null,
+        validity_days: validityDays,
+        status: 'draft',
+      },
+      proposalItems
+    );
+
+    if (result.data) {
+      // Generate and preview PDF
+      await previewPdf(result.data.id);
+    }
+
+    setIsPreviewing(false);
+  };
+
   const handleSendProposal = async () => {
     if (!validateForm()) return;
 
@@ -244,13 +286,42 @@ export default function NewProposal() {
     );
 
     if (result.data) {
-      // Then mark it as sent
-      await sendProposal(result.data.id);
-      // TODO: Actually send via WhatsApp using Edge Function
-      toast({
-        title: 'Proposta criada!',
-        description: 'A geração de PDF e envio via WhatsApp será implementado em breve.',
-      });
+      // Generate PDF first
+      const pdfResult = await generatePdf(result.data.id);
+      
+      if (pdfResult?.pdfUrl) {
+        // Send via WhatsApp
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.access_token) {
+          const whatsappResponse = await supabase.functions.invoke('whatsapp', {
+            body: {
+              action: 'send-message',
+              phone: clientWhatsApp.replace(/\D/g, ''),
+              message: `Olá ${clientName}! Segue a proposta comercial solicitada.`,
+              mediaUrl: pdfResult.pdfUrl,
+              mediaType: 'document',
+              fileName: pdfResult.fileName,
+            },
+          });
+
+          if (whatsappResponse.error) {
+            console.error('Error sending WhatsApp:', whatsappResponse.error);
+            toast({
+              title: 'PDF gerado, mas houve erro no envio',
+              description: 'O PDF foi gerado. Tente enviar manualmente.',
+              variant: 'destructive',
+            });
+          } else {
+            // Mark as sent
+            await sendProposal(result.data.id);
+            toast({
+              title: 'Proposta enviada!',
+              description: `A proposta foi enviada para ${clientWhatsApp} via WhatsApp.`,
+            });
+          }
+        }
+      }
     }
 
     setIsSending(false);
@@ -576,7 +647,7 @@ export default function NewProposal() {
                 <Button
                   className="w-full bg-gradient-primary shadow-primary hover:opacity-90"
                   onClick={handleSendProposal}
-                  disabled={isSaving || isSending}
+                  disabled={isSaving || isSending || isPreviewing || isGenerating}
                 >
                   {isSending ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -585,15 +656,24 @@ export default function NewProposal() {
                   )}
                   Enviar via WhatsApp
                 </Button>
-                <Button variant="outline" className="w-full" disabled={isSaving || isSending}>
-                  <Eye className="w-4 h-4 mr-2" />
-                  Pré-visualizar
+                <Button 
+                  variant="outline" 
+                  className="w-full" 
+                  disabled={isSaving || isSending || isPreviewing || isGenerating}
+                  onClick={handlePreview}
+                >
+                  {isPreviewing || isGenerating ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Eye className="w-4 h-4 mr-2" />
+                  )}
+                  Pré-visualizar PDF
                 </Button>
                 <Button
                   variant="ghost"
                   className="w-full"
                   onClick={handleSaveDraft}
-                  disabled={isSaving || isSending}
+                  disabled={isSaving || isSending || isPreviewing || isGenerating}
                 >
                   {isSaving ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
