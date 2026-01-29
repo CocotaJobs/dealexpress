@@ -123,7 +123,7 @@ Deno.serve(async (req) => {
         return handleCreate(instanceName, userId, EVOLUTION_API_URL, EVOLUTION_API_KEY, SUPABASE_URL, supabaseAdmin);
       
       case 'status':
-        return handleStatus(instanceName, EVOLUTION_API_URL, EVOLUTION_API_KEY);
+        return handleStatus(instanceName, userId, EVOLUTION_API_URL, EVOLUTION_API_KEY, supabaseAdmin);
       
       case 'disconnect':
         return handleDisconnect(instanceName, userId, EVOLUTION_API_URL, EVOLUTION_API_KEY, supabaseAdmin);
@@ -275,8 +275,11 @@ async function handleCreate(
 
 async function handleStatus(
   instanceName: string,
+  userId: string,
   evolutionUrl: string,
-  evolutionKey: string
+  evolutionKey: string,
+  // deno-lint-ignore no-explicit-any
+  supabaseAdmin: any
 ) {
   console.log(`Checking status for: ${instanceName}`);
 
@@ -289,7 +292,6 @@ async function handleStatus(
   });
 
   if (!response.ok) {
-    // Instance might not exist
     return new Response(
       JSON.stringify({ connected: false, state: 'not_found' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -300,6 +302,23 @@ async function handleStatus(
   console.log('Status response:', data);
 
   const isConnected = data.instance?.state === 'open';
+
+  // Atualizar banco de dados quando conectado
+  if (isConnected) {
+    const { error } = await supabaseAdmin
+      .from('profiles')
+      .update({
+        whatsapp_connected: true,
+        whatsapp_session_id: instanceName,
+      })
+      .eq('id', userId);
+
+    if (error) {
+      console.error('Error updating profile on status check:', error);
+    } else {
+      console.log('Profile updated to connected via status check');
+    }
+  }
 
   return new Response(
     JSON.stringify({
