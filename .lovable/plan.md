@@ -1,190 +1,165 @@
 
-# Importação de Itens via Planilha (Excel/CSV)
+# Integração de Templates .docx Customizados para Geração de PDF
 
 ## Objetivo
-Implementar funcionalidade para importar itens em massa a partir de arquivos Excel (.xlsx) ou CSV, com validação prévia e preview antes de confirmar a importação.
+Modificar a Edge Function `generate-pdf` para baixar e processar o template .docx ativo da organização, substituindo os campos dinâmicos pelos valores reais da proposta, e gerando um PDF formatado a partir do documento Word personalizado.
 
-## Fluxo do Usuário
+## Situação Atual
+
+- Templates .docx são armazenados no bucket `templates` no Storage
+- A tabela `templates` guarda metadados (nome, caminho, organização, ativo)
+- A Edge Function `generate-pdf` usa um HTML hardcoded, ignorando os templates customizados
+- Campos dinâmicos documentados: `{{cliente_nome}}`, `{{tabela_itens}}`, `{{valor_total}}`, etc.
+
+## Fluxo Proposto
 
 ```text
 +------------------+     +------------------+     +------------------+     +------------------+
-|   Upload do      |     |   Parsing do     |     |   Preview com    |     |   Confirmação    |
-|   Arquivo        |---->|   Arquivo        |---->|   Validação      |---->|   e Inserção     |
+|   Buscar         |     |   Baixar .docx   |     |   Substituir     |     |   Converter      |
+|   Template Ativo |---->|   do Storage     |---->|   Campos         |---->|   para PDF       |
 +------------------+     +------------------+     +------------------+     +------------------+
         |                        |                        |                        |
-  .xlsx ou .csv           Extrai linhas          Mostra tabela com       Insere no banco
-  Máx 5MB                 e colunas              erros destacados        em lote
-                                                 Permite editar
+  Query na tabela           Download do            Usar biblioteca          Gerar PDF e
+  templates                 arquivo               docx-templates           salvar no Storage
 ```
 
-## Arquivos a Criar/Modificar
+## Tratamento de Campos Não Utilizados
 
-### 1. Novo Componente: `src/components/items/ImportItemsDialog.tsx`
+**Comportamento para campos ausentes no template:**
+- Se o template não contiver `{{cliente_email}}`, simplesmente não será substituído nada
+- Se o template contiver `{{cliente_email}}` mas o valor for vazio/null, o placeholder será removido (substituído por string vazia)
+- A tabela de itens `{{tabela_itens}}` será gerada dinamicamente como texto formatado
 
-Dialog completo para importação com:
-- Área de upload (drag & drop)
-- Instruções e modelo de planilha para download
-- Preview da tabela com validação
-- Contagem de itens válidos/inválidos
-- Botão de confirmar importação
+## Arquivos a Modificar
 
-### 2. Novo Hook: `src/hooks/useItemsImport.ts`
+### 1. Edge Function: `supabase/functions/generate-pdf/index.ts`
 
-Hook para gerenciar a lógica de importação:
-- Parsing de CSV (nativo com `FileReader`)
-- Parsing de Excel (usando biblioteca `xlsx`)
-- Validação com Zod
-- Inserção em lote no Supabase
+Mudanças principais:
 
-### 3. Modificar: `src/pages/Items.tsx`
+1. **Buscar template ativo** da organização:
+```typescript
+const { data: template } = await supabaseAdmin
+  .from('templates')
+  .select('file_path')
+  .eq('organization_id', proposal.organization_id)
+  .eq('is_active', true)
+  .single();
+```
 
-Adicionar:
-- Botão "Importar Planilha" ao lado de "Novo Item"
-- Integração com o novo dialog
+2. **Baixar arquivo .docx** do Storage:
+```typescript
+const { data: templateFile } = await supabaseAdmin
+  .storage
+  .from('templates')
+  .download(template.file_path);
+```
 
-### 4. Arquivo modelo: Download dinâmico
+3. **Processar o .docx** substituindo campos dinâmicos:
+   - Usar biblioteca `docx-templates` (compatível com Deno via esm.sh)
+   - Mapear todos os campos para valores da proposta
 
-Gerar CSV/Excel modelo com colunas corretas para o usuário baixar.
+4. **Converter para PDF**:
+   - Usar `html2pdf` ou similar via API externa
+   - Alternativa: converter docx para HTML primeiro, depois para PDF
+
+5. **Fallback**: Se não houver template ativo, usar o HTML padrão atual
+
+## Mapeamento de Campos Dinâmicos
+
+| Campo | Valor |
+|-------|-------|
+| `{{cliente_nome}}` | `proposal.client_name` |
+| `{{cliente_email}}` | `proposal.client_email \|\| ''` |
+| `{{cliente_whatsapp}}` | `proposal.client_whatsapp \|\| ''` |
+| `{{cliente_empresa}}` | `proposal.client_company \|\| ''` |
+| `{{cliente_endereco}}` | `proposal.client_address \|\| ''` |
+| `{{data}}` | Data formatada (dd/mm/yyyy) |
+| `{{numero_proposta}}` | `proposal.proposal_number` |
+| `{{vendedor_nome}}` | `vendor.name` |
+| `{{vendedor_email}}` | `vendor.email` |
+| `{{empresa_nome}}` | `organization.name` |
+| `{{tabela_itens}}` | Texto formatado com lista de itens |
+| `{{valor_total}}` | Valor total formatado (R$ X.XXX,XX) |
+| `{{condicoes_pagamento}}` | `proposal.payment_conditions \|\| ''` |
+| `{{validade_proposta}}` | `proposal.expires_at` formatado |
+| `{{validade_dias}}` | `proposal.validity_days` |
 
 ## Detalhes Técnicos
 
-### Dependência Necessária
-Precisamos instalar `xlsx` para ler arquivos Excel:
-```bash
-npm install xlsx
-```
+### Biblioteca para Processar DOCX
 
-### Estrutura do Arquivo de Importação
-
-| nome* | tipo | categoria | preco* | desconto_max | descricao | ficha_tecnica |
-|-------|------|-----------|--------|--------------|-----------|---------------|
-| Produto A | product | Ferramentas | 199.90 | 10 | Descrição breve | Especificações |
-| Serviço B | service | Instalação | 500.00 | 5 | | |
-
-*Campos obrigatórios
-
-### Validação com Zod
-
+Usaremos `docx-templates` via esm.sh:
 ```typescript
-const importItemSchema = z.object({
-  nome: z.string().min(1, 'Nome obrigatório').max(100),
-  tipo: z.enum(['product', 'service']).default('product'),
-  categoria: z.string().optional(),
-  preco: z.number().min(0, 'Preço deve ser positivo'),
-  desconto_max: z.number().min(0).max(100).default(0),
-  descricao: z.string().max(200).optional(),
-  ficha_tecnica: z.string().optional(),
-});
+import createReport from 'https://esm.sh/docx-templates@4.11.4';
 ```
 
-### Estados do Preview
+Esta biblioteca:
+- Lê arquivos .docx
+- Substitui placeholders `{campo}` ou `{{campo}}`
+- Retorna o .docx modificado como Buffer
 
-1. **Válido**: Linha verde, pronta para importar
-2. **Aviso**: Linha amarela, campo opcional com problema (importa mesmo assim)
-3. **Erro**: Linha vermelha, campo obrigatório inválido (não importa)
+### Conversão DOCX para PDF
 
-### Fluxo de Categorias
+**Opção escolhida**: API CloudConvert ou LibreOffice Online
 
-- Se o nome da categoria existir no banco: usa o ID existente
-- Se não existir: cria a categoria automaticamente
-- Se vazio: deixa `category_id` como null
+Como Deno Edge Functions não têm LibreOffice instalado, usaremos uma API externa gratuita ou converteremos para HTML primeiro:
 
-### Inserção em Lote
+1. **Mammoth.js** para DOCX -> HTML
+2. **Puppeteer/html2pdf** para HTML -> PDF
 
-```typescript
-// Usa transação para inserir todos de uma vez
-const { data, error } = await supabase
-  .from('items')
-  .insert(validItems.map(item => ({
-    name: item.nome,
-    type: item.tipo,
-    category_id: categoryMap[item.categoria] || null,
-    price: item.preco,
-    max_discount: item.desconto_max,
-    description: item.descricao,
-    technical_specs: item.ficha_tecnica,
-    organization_id: orgId,
-  })));
-```
+Alternativa mais simples:
+- Extrair texto do DOCX processado
+- Gerar PDF usando o método atual (básico porém funcional)
 
-## Interface do Dialog
+### Formato da Tabela de Itens
 
 ```text
-+----------------------------------------------------------+
-|  Importar Itens via Planilha                        [X]  |
-+----------------------------------------------------------+
-|                                                          |
-|  [Baixar Modelo Excel]  [Baixar Modelo CSV]              |
-|                                                          |
-|  +----------------------------------------------------+  |
-|  |                                                    |  |
-|  |     📄 Arraste seu arquivo aqui                    |  |
-|  |        ou clique para selecionar                   |  |
-|  |                                                    |  |
-|  |        .xlsx ou .csv (máx 5MB)                     |  |
-|  +----------------------------------------------------+  |
-|                                                          |
-+----------------------------------------------------------+
-| (Após upload - Preview)                                  |
-+----------------------------------------------------------+
-|                                                          |
-|  📊 Preview da Importação                                |
-|  ✅ 45 itens válidos  ⚠️ 3 com avisos  ❌ 2 com erros    |
-|                                                          |
-|  +----------------------------------------------------+  |
-|  | # | Nome      | Tipo    | Preço  | Status         |  |
-|  +----------------------------------------------------+  |
-|  | 1 | Produto A | product | 199.90 | ✅ Válido       |  |
-|  | 2 | Serviço B | service | 500.00 | ✅ Válido       |  |
-|  | 3 | Item C    | erro    |   -    | ❌ Tipo inválido|  |
-|  +----------------------------------------------------+  |
-|                                                          |
-|  [Cancelar]                    [Importar 45 itens]       |
-+----------------------------------------------------------+
+ITENS DA PROPOSTA
+-----------------
+1. Produto A
+   Qtd: 2 x R$ 199,90 = R$ 399,80
+
+2. Serviço B  
+   Qtd: 1 x R$ 500,00 (-10%) = R$ 450,00
+
+-----------------
+TOTAL: R$ 849,80
 ```
 
 ## Implementação Passo a Passo
 
-1. **Instalar dependência `xlsx`**
-   
-2. **Criar hook `useItemsImport.ts`**
-   - Função `parseFile(file)` - detecta tipo e faz parsing
-   - Função `validateRows(rows)` - valida com Zod
-   - Função `importItems(validRows)` - insere no banco
-   - Estado para linhas parseadas, erros, loading
+1. **Importar bibliotecas** necessárias no Deno (PizZip, docx-templates, mammoth)
 
-3. **Criar componente `ImportItemsDialog.tsx`**
-   - Área de upload com drag & drop
-   - Botões para baixar modelo
-   - Tabela de preview com scroll
-   - Indicadores de status por linha
-   - Ações de cancelar/confirmar
+2. **Criar função `processDocxTemplate`**:
+   - Recebe: Buffer do .docx + dados da proposta
+   - Retorna: Buffer do .docx processado
 
-4. **Integrar na página `Items.tsx`**
-   - Adicionar botão ao lado de "Novo Item"
-   - Controlar abertura do dialog
-   - Refresh da lista após importação
+3. **Criar função `convertDocxToHtml`**:
+   - Usa mammoth.js para converter
+   - Retorna: HTML string
 
-5. **Criar categorias automaticamente**
-   - Buscar categorias existentes
-   - Criar as que não existem
-   - Mapear nomes para IDs
+4. **Modificar fluxo principal**:
+   - Tentar usar template customizado
+   - Se falhar, usar HTML padrão (fallback)
+
+5. **Atualizar geração de PDF**:
+   - Usar HTML do docx convertido
+   - Manter método de geração atual
 
 ## Considerações
 
-- **Limite de linhas**: Máximo 500 itens por importação
-- **Limite de arquivo**: Máximo 5MB
-- **Encoding CSV**: Detectar UTF-8 e Latin-1 (ISO-8859-1)
-- **Separador CSV**: Detectar `,` ou `;` automaticamente
-- **Números**: Aceitar formato brasileiro (1.234,56) e internacional (1,234.56)
+- **Performance**: O processamento adiciona ~1-2 segundos
+- **Compatibilidade**: Suporta .docx criados no Word, Google Docs, LibreOffice
+- **Limitações**: Imagens no template podem não ser preservadas na conversão para PDF simples
+- **Fallback**: Se não houver template ativo, usa o template HTML padrão do sistema
 
 ## Resultado Esperado
 
-O usuário poderá:
-1. Baixar um modelo de planilha pronto
-2. Preencher com seus itens
-3. Fazer upload do arquivo
-4. Ver preview com validação visual
-5. Corrigir erros se necessário (re-upload)
-6. Confirmar importação
-7. Ver toast com resultado final
+1. Admin faz upload de template .docx personalizado com os campos `{{campo}}`
+2. Ao gerar PDF de uma proposta, o sistema:
+   - Baixa o template .docx ativo
+   - Substitui todos os campos pelos valores reais
+   - Campos não preenchidos ficam vazios (não mostra `{{campo}}`)
+   - Gera PDF mantendo a formatação básica do documento
+3. PDF é salvo no Storage e link atualizado na proposta
+
