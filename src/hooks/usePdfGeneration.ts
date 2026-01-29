@@ -56,10 +56,32 @@ export function usePdfGeneration() {
   };
 
   const previewPdf = async (proposalId: string) => {
-    const result = await generatePdf(proposalId);
-    if (result?.pdfUrl) {
-      window.open(result.pdfUrl, '_blank');
+    // Abre a janela ANTES da operação async (permitido pelo navegador)
+    const newWindow = window.open('', '_blank');
+    
+    if (newWindow) {
+      newWindow.document.write(`
+        <html>
+          <body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#f5f5f5;">
+            <div style="text-align:center;">
+              <p style="font-size:18px;color:#333;">Gerando PDF...</p>
+              <p style="color:#666;">Aguarde um momento</p>
+            </div>
+          </body>
+        </html>
+      `);
     }
+    
+    const result = await generatePdf(proposalId);
+    
+    if (result?.pdfUrl && newWindow) {
+      // Redireciona a janela já aberta para o PDF
+      newWindow.location.href = result.pdfUrl;
+    } else if (newWindow) {
+      // Se falhou, fecha a janela em branco
+      newWindow.close();
+    }
+    
     return result;
   };
 
