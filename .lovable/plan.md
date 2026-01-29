@@ -1,101 +1,40 @@
 
-# Plano: Data por Extenso e Limpeza de Dados Mock
+# Adicionar Campo `{{data_extenso}}` à Lista de Campos Dinâmicos
 
-## Resumo
+## Problema Identificado
 
-Este plano implementa duas mudanças:
-1. **Campo de data por extenso dinâmica** - Adicionar um campo `{{data_extenso}}` nos templates de proposta que exibe a data atual no formato "29 de Janeiro de 2026"
-2. **Limpeza de dados mock** - Remover todos os dados de teste/exemplo do banco de dados para deixar o app limpo
+O campo `{{data_extenso}}` foi adicionado corretamente na Edge Function `generate-pdf`, mas a lista de campos dinâmicos exibida na página de Templates não foi atualizada para incluir esse novo campo.
 
----
+## Solução
 
-## 1. Campo de Data por Extenso
+Adicionar o campo `{{data_extenso}}` à lista `dynamicFields` no arquivo `src/pages/Templates.tsx`.
 
-### O que será feito
-
-Adicionar suporte a um novo campo dinâmico `{{data_extenso}}` no sistema de geração de PDF que sempre exibirá a **data atual** no formato por extenso em português.
-
-**Exemplo:** `29 de Janeiro de 2026`
-
-### Alterações técnicas
+## Alteração
 
 | Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/generate-pdf/index.ts` | Adicionar função `formatDateExtended()` e incluir campo `data_extenso` nos dados do template |
+| `src/pages/Templates.tsx` | Adicionar `{{data_extenso}}` na lista de campos dinâmicos (linha 26) |
 
-### Nova função helper
+## Código a ser adicionado
 
 ```typescript
-const formatDateExtended = (): string => {
-  const months = [
-    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-  ];
-  const now = new Date();
-  const day = now.getDate();
-  const month = months[now.getMonth()];
-  const year = now.getFullYear();
-  return `${day} de ${month} de ${year}`;
-};
+const dynamicFields = [
+  { field: '{{cliente_nome}}', description: 'Nome completo do cliente' },
+  { field: '{{cliente_email}}', description: 'Email do cliente' },
+  { field: '{{cliente_whatsapp}}', description: 'WhatsApp do cliente' },
+  { field: '{{cliente_empresa}}', description: 'Nome da empresa do cliente' },
+  { field: '{{cliente_endereco}}', description: 'Endereço do cliente' },
+  { field: '{{data}}', description: 'Data de geração da proposta' },
+  { field: '{{data_extenso}}', description: 'Data atual por extenso (ex: 29 de Janeiro de 2026)' },  // ← NOVO
+  { field: '{{numero_proposta}}', description: 'Número único da proposta' },
+  { field: '{{vendedor_nome}}', description: 'Nome do vendedor' },
+  { field: '{{tabela_itens}}', description: 'Tabela com itens da proposta' },
+  { field: '{{valor_total}}', description: 'Valor total da proposta' },
+  { field: '{{condicoes_pagamento}}', description: 'Condições de pagamento' },
+  { field: '{{validade_proposta}}', description: 'Data de validade' },
+];
 ```
 
-### Campos disponíveis após a mudança
+## Resultado Esperado
 
-Os templates `.docx` poderão usar:
-- `{{data_extenso}}` - Data atual por extenso (ex: "29 de Janeiro de 2026")
-- `{{data}}` - Data de criação da proposta (DD/MM/YYYY)
-- Todos os outros campos existentes
-
----
-
-## 2. Limpeza de Dados Mock
-
-### Dados atuais no banco
-
-| Tabela | Quantidade | Dados |
-|--------|------------|-------|
-| proposals | 4 | Propostas de teste (Cliente Teste PDF, João, etc.) |
-| proposal_items | - | Itens dessas propostas |
-| items | 1 | "Retífica Industrial X500" |
-| templates | 2 | Template Teste 1 e 2 |
-| categories | 0 | Vazio |
-| organizations | 1 | Sua organização (manter) |
-| profiles | 1 | Seu perfil (manter) |
-
-### O que será removido
-
-Executarei **queries SQL** para limpar:
-1. Todas as propostas de teste
-2. Todos os itens de proposta
-3. Todos os itens do catálogo
-4. Todos os templates de teste
-
-### O que será mantido
-
-- **Seu perfil de usuário** - Necessário para login
-- **Sua organização** - Vinculada ao seu usuário
-- **Estrutura das tabelas** - Intacta e pronta para seus dados
-
----
-
-## Resumo da Implementação
-
-1. Atualizar Edge Function `generate-pdf` com a nova função de data por extenso
-2. Executar SQL para limpar dados mock do banco
-3. Testar geração de PDF com o novo campo
-
----
-
-## Uso do Campo Data por Extenso
-
-Após a implementação, nos seus templates `.docx` você poderá usar:
-
-```
-{{data_extenso}}
-```
-
-E isso será substituído automaticamente pela data atual, por exemplo:
-
-```
-29 de Janeiro de 2026
-```
+Após a implementação, o campo `{{data_extenso}}` aparecerá na seção "Campos Dinâmicos" da página de Templates com a descrição explicativa.
