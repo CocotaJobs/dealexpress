@@ -1,119 +1,98 @@
 
+# Correção: Chrome Bloqueando Popup do PDF
 
-# Correção: Rotas 404 + Qualidade do PDF Gerado
+## Problema Identificado
 
-## Problemas Identificados
+O Chrome (e outros navegadores) bloqueia `window.open()` quando ele é chamado **após operações assíncronas**. No código atual:
 
-### 1. Erro 404 nas Rotas de Proposta
-As rotas `/proposals/:id` (visualizar) e `/proposals/:id/edit` (editar) **não existem** no `App.tsx`, causando erro 404 ao clicar nos links.
+```typescript
+const previewPdf = async (proposalId: string) => {
+  const result = await generatePdf(proposalId);  // ← Operação async
+  if (result?.pdfUrl) {
+    window.open(result.pdfUrl, '_blank');  // ← Bloqueado pelo Chrome!
+  }
+};
+```
 
-### 2. PDF Não Parece com o Template DOCX
-O pipeline atual de geração de PDF tem duas limitações:
-- **Mammoth.js** converte DOCX → HTML muito simplificado (perde formatação rica)
-- **`generatePdfFromHtmlContent()`** é primitivo - apenas extrai texto bruto e gera um PDF básico com fonte Courier
-
-Resultado: o PDF gerado é basicamente texto plano, ignorando fontes, cores, tabelas e layout do template original.
+O navegador considera isso um popup não autorizado porque não foi disparado diretamente pelo clique do usuário.
 
 ## Solução Proposta
 
-### Parte 1: Criar Páginas de Visualização/Edição
+**Estratégia**: Abrir a janela **antes** da operação assíncrona (quando ainda temos o "contexto de clique do usuário"), e depois redirecionar essa janela para a URL do PDF.
 
-Criar duas novas páginas e adicionar rotas:
+### Modificação em `src/hooks/usePdfGeneration.ts`
 
-**Arquivos novos:**
-- `src/pages/ViewProposal.tsx` - página de visualização de proposta
-- `src/pages/EditProposal.tsx` - página de edição (baseada em NewProposal)
-
-**Modificar:**
-- `src/App.tsx` - adicionar rotas:
-  - `/proposals/:id` → ViewProposal
-  - `/proposals/:id/edit` → EditProposal
-
-### Parte 2: Melhorar Qualidade do PDF
-
-**Estratégia:** Usar uma API de conversão profissional para transformar HTML em PDF com alta qualidade.
-
-Opções avaliadas:
-1. **Gotenberg** - requer setup de container Docker
-2. **API externa gratuita** - limitações de uso
-3. **pdf-lib + HTML melhor estruturado** - mais controle, sem dependência externa
-
-**Solução escolhida:** Melhorar significativamente o HTML gerado pelo mammoth e usar uma função de geração de PDF mais robusta com `pdf-lib`.
-
-**Modificações em `supabase/functions/generate-pdf/index.ts`:**
-
-1. **Melhorar conversão HTML**:
-   - Adicionar estilos CSS inline mais ricos
-   - Preservar estrutura de tabelas
-   - Manter formatação de cabeçalhos
-
-2. **Usar pdf-lib** para gerar PDF de melhor qualidade:
-   - Suporte a múltiplas páginas
-   - Fontes embutidas
-   - Melhor controle de layout
-
-3. **Alternativa**: Usar API gratuita como `html2pdf.app` que aceita HTML e retorna PDF formatado
-
-## Detalhes Técnicos
-
-### Nova Rota: ViewProposal.tsx
-
-Exibirá:
-- Dados do cliente
-- Tabela de itens
-- Valor total
-- Status da proposta
-- Botões de ação (Editar, Baixar PDF, Enviar)
-
-### Nova Rota: EditProposal.tsx
-
-- Carrega dados existentes da proposta
-- Permite modificar cliente, itens e condições
-- Salva alterações no banco
-
-### Melhorias na Edge Function
-
-```text
-Fluxo Atual (problema):
-DOCX → Mammoth → HTML simples → Texto bruto → PDF feio
-
-Fluxo Proposto:
-DOCX → Mammoth → HTML estilizado → pdf-lib → PDF formatado
-```
-
-**Importação adicional:**
 ```typescript
-import { PDFDocument, StandardFonts, rgb } from 'https://esm.sh/pdf-lib@1.17.1';
+const previewPdf = async (proposalId: string) => {
+  // Abre a janela ANTES da operação async (permitido pelo navegador)
+  const newWindow = window.open('about:blank', '_blank');
+  
+  const result = await generatePdf(proposalId);
+  
+  if (result?.pdfUrl && newWindow) {
+    // Redireciona a janela já aberta para o PDF
+    newWindow.location.href = result.pdfUrl;
+  } else if (newWindow) {
+    // Se falhou, fecha a janela em branco
+    newWindow.close();
+  }
+  
+  return result;
+};
 ```
 
-**Nova função `generatePdfWithPdfLib()`:**
-- Processa o HTML/texto de forma estruturada
-- Cria páginas A4
-- Aplica fontes legíveis (Helvetica)
-- Mantém layout com margens adequadas
-- Suporta quebras de página automáticas
+### Alternativa para Download
 
-## Arquivos a Criar/Modificar
+Para o download, podemos usar a mesma técnica ou manter como está (downloads geralmente não são bloqueados):
 
-| Arquivo | Ação | Descrição |
-|---------|------|-----------|
-| `src/pages/ViewProposal.tsx` | Criar | Página de visualização |
-| `src/pages/EditProposal.tsx` | Criar | Página de edição |
-| `src/App.tsx` | Modificar | Adicionar rotas |
-| `supabase/functions/generate-pdf/index.ts` | Modificar | Melhorar geração de PDF |
-| `src/hooks/useProposals.ts` | Modificar | Adicionar função `updateProposal` |
+```typescript
+const downloadPdf = async (proposalId: string) => {
+  const result = await generatePdf(proposalId);
+  if (result?.pdfUrl) {
+    // Criar link e forçar download (não é popup)
+    const a = document.createElement('a');
+    a.href = result.pdfUrl;
+    a.download = result.fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+  return result;
+};
+```
 
-## Resultado Esperado
+## Arquivos a Modificar
 
-1. **Rotas funcionando**: Clicar em "Visualizar" e "Editar" abre as páginas corretas
-2. **PDF melhor qualidade**: Documento gerado mantém estrutura, fontes e layout mais próximo do template
-3. **Edição funcional**: Possível modificar propostas em rascunho
+| Arquivo | Mudança |
+|---------|---------|
+| `src/hooks/usePdfGeneration.ts` | Abrir janela antes do await, redirecionar depois |
 
-## Limitações
+## Comportamento Esperado
 
-- A conversão DOCX → PDF em Edge Functions sem LibreOffice sempre terá perdas de formatação
-- Para 100% de fidelidade ao template Word, seria necessário:
-  - API externa paga (CloudConvert, ConvertAPI)
-  - Ou servidor com LibreOffice instalado
-- A solução proposta melhora significativamente a qualidade mas não será pixel-perfect
+1. Usuário clica em "Baixar PDF" ou "Visualizar"
+2. Uma nova aba abre imediatamente (em branco ou com loading)
+3. O PDF é gerado em background
+4. A aba é redirecionada para o PDF
+5. Se houver erro, a aba é fechada e um toast de erro é exibido
 
+## Melhoria Adicional (Opcional)
+
+Podemos mostrar uma página de "Gerando PDF..." enquanto aguarda:
+
+```typescript
+const newWindow = window.open('', '_blank');
+if (newWindow) {
+  newWindow.document.write(`
+    <html>
+      <body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;">
+        <div style="text-align:center;">
+          <p>Gerando PDF...</p>
+          <p style="color:#666;">Aguarde um momento</p>
+        </div>
+      </body>
+    </html>
+  `);
+}
+```
+
+Isso dá feedback visual ao usuário enquanto o PDF está sendo gerado.
