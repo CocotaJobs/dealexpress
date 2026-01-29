@@ -877,6 +877,8 @@ Deno.serve(async (req) => {
       .from('generated-pdfs')
       .upload(fileName, pdfBuffer, {
         contentType: 'application/pdf',
+        // Prevent CDN/browser caching from serving an older version when upserting same file
+        cacheControl: '0',
         upsert: true,
       });
 
