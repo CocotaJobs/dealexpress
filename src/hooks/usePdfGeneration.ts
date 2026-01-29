@@ -33,6 +33,11 @@ export function usePdfGeneration() {
   const { toast } = useToast();
   const [isGenerating, setIsGenerating] = useState(false);
 
+  const withCacheBuster = (url: string) => {
+    const sep = url.includes('?') ? '&' : '?';
+    return `${url}${sep}v=${Date.now()}`;
+  };
+
   /**
    * Helper to open a preview window immediately (before any async operation).
    * Call this BEFORE any `await` in your click handler to avoid popup blocking.
@@ -116,7 +121,8 @@ export function usePdfGeneration() {
     const result = await generatePdf(proposalId);
     
     if (result?.pdfUrl && targetWindow) {
-      targetWindow.location.href = result.pdfUrl;
+      // Avoid showing a cached PDF when using the same public URL
+      targetWindow.location.href = withCacheBuster(result.pdfUrl);
     } else if (targetWindow) {
       // Show error message in the window
       try {
@@ -137,7 +143,7 @@ export function usePdfGeneration() {
     if (result?.pdfUrl) {
       try {
         // Fetch the PDF as blob to avoid cross-origin download issues
-        const response = await fetch(result.pdfUrl);
+        const response = await fetch(withCacheBuster(result.pdfUrl), { cache: 'no-store' });
         const blob = await response.blob();
         
         // Create object URL from blob
@@ -156,7 +162,7 @@ export function usePdfGeneration() {
       } catch (error) {
         console.error('Download via blob failed, opening in new tab:', error);
         // Fallback: open in new tab if download fails
-        window.open(result.pdfUrl, '_blank');
+        window.open(withCacheBuster(result.pdfUrl), '_blank');
       }
     }
     return result;
