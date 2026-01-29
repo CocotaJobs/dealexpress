@@ -1,136 +1,132 @@
 
+# Correção da Detecção de Conexão WhatsApp
 
-# Integração WhatsApp com Evolution API
+## Problema Identificado
 
-## Resumo
+Após análise dos logs e do código, identifiquei que:
 
-A Evolution API permite **automatizar completamente** o processo de conexão WhatsApp. Cada usuário poderá conectar seu próprio WhatsApp diretamente pela aplicação, sem necessidade de pré-criar instâncias manualmente.
+1. **Evolution API confirma conexão**: O status retorna `"state": "open"` (conectado)
+2. **Banco de dados não foi atualizado**: `whatsapp_connected` permanece `false`
+3. **Webhook não está chegando**: Não há logs de "Webhook received" - provavelmente a Evolution API não consegue acessar a URL do webhook (pode ser bloqueio de firewall, DNS, ou configuração)
+4. **Polling detecta conexão, mas não atualiza o banco**: A função `handleStatus` apenas retorna o status sem fazer UPDATE no profiles
 
-## Como Funcionará
+## Solução
+
+Modificar a função `handleStatus` na Edge Function para **atualizar o banco de dados automaticamente** quando detectar que o WhatsApp está conectado. Isso elimina a dependência do webhook (que pode falhar por configurações de rede).
+
+## Arquivos a Modificar
+
+### `supabase/functions/whatsapp/index.ts`
+
+**Mudanças necessárias:**
+
+1. **Modificar a chamada de `handleStatus`** (no switch/case) para passar `userId` e `supabaseAdmin`
+
+2. **Atualizar a função `handleStatus`** para:
+   - Receber `userId` e `supabaseAdmin` como parâmetros
+   - Quando `state === 'open'`, fazer UPDATE no profiles para `whatsapp_connected = true`
+   - Retornar o status normalmente
+
+## Código Atualizado
+
+```javascript
+// Na seção do switch case (linha ~117):
+case 'status':
+  return handleStatus(instanceName, userId, EVOLUTION_API_URL, EVOLUTION_API_KEY, supabaseAdmin);
+
+// Função handleStatus atualizada:
+async function handleStatus(
+  instanceName: string,
+  userId: string,
+  evolutionUrl: string,
+  evolutionKey: string,
+  supabaseAdmin: any
+) {
+  console.log(`Checking status for: ${instanceName}`);
+
+  const response = await fetch(`${evolutionUrl}/instance/connectionState/${instanceName}`, {
+    method: 'GET',
+    headers: {
+      'apikey': evolutionKey,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    return new Response(
+      JSON.stringify({ connected: false, state: 'not_found' }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
+  const data = await response.json();
+  console.log('Status response:', data);
+
+  const isConnected = data.instance?.state === 'open';
+
+  // NOVO: Atualizar banco de dados quando conectado
+  if (isConnected) {
+    const { error } = await supabaseAdmin
+      .from('profiles')
+      .update({
+        whatsapp_connected: true,
+        whatsapp_session_id: instanceName,
+      })
+      .eq('id', userId);
+
+    if (error) {
+      console.error('Error updating profile on status check:', error);
+    } else {
+      console.log('Profile updated to connected via status check');
+    }
+  }
+
+  return new Response(
+    JSON.stringify({
+      connected: isConnected,
+      state: data.instance?.state || 'unknown',
+    }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
+```
+
+## Fluxo Após Correção
 
 ```text
 +------------------+     +------------------+     +------------------+
-|                  |     |                  |     |                  |
-|   Frontend       |---->|   Edge Function  |---->|   Evolution API  |
-|   (WhatsApp.tsx) |     |   (whatsapp)     |     |   (seu servidor) |
-|                  |     |                  |     |                  |
+|   Usuário        |     |   Frontend       |     |   Edge Function  |
+|   escaneia QR    |     |   (polling)      |     |   (handleStatus) |
++--------+---------+     +--------+---------+     +--------+---------+
+         |                        |                        |
+         |                        | POST status (a cada 3s)|
+         |                        +----------------------->|
+         |                        |                        | Consulta Evolution API
+         |                        |                        | Detecta state="open"
+         |                        |                        | UPDATE profiles SET
+         |                        |                        | whatsapp_connected=true
+         |                        |<-----------------------+
+         |                        | connected: true        |
+         |                        |                        |
+         |                        | refreshProfile()       |
+         |                        | Exibe "Conectado"      |
+         |                        +                        |
 +------------------+     +------------------+     +------------------+
-        ^                        |                        |
-        |                        v                        |
-        |                +------------------+             |
-        +<---------------|   Supabase DB    |<------------+
-                         |   (profiles)     |   (webhook)
-                         +------------------+
 ```
 
-## Fluxo de Conexão
+## Por que não consertar o webhook?
 
-1. **Usuário clica em "Gerar QR Code"**
-2. **Edge Function cria instância na Evolution API** usando o `user_id` como nome único
-3. **Evolution API retorna QR Code** (base64 ou URL)
-4. **Frontend exibe o QR Code** para o usuário escanear
-5. **Webhook recebe evento CONNECTION_UPDATE** quando conectado
-6. **Webhook atualiza profiles** no banco de dados (whatsapp_connected = true)
-7. **Frontend detecta a mudança** e mostra status conectado
+O webhook depende de a Evolution API conseguir alcançar a URL do Supabase. Isso pode falhar por:
+- Firewall na rede onde a Evolution API está hospedada
+- Configuração de DNS
+- Rate limiting
 
-## Credenciais Necessárias
+A solução via polling é mais robusta e não depende de configurações externas.
 
-Você precisará fornecer apenas **2 credenciais globais** (não por usuário):
+## Teste
 
-| Variável | Descrição |
-|----------|-----------|
-| `EVOLUTION_API_URL` | URL do seu servidor Evolution API (ex: `https://api.seudominio.com`) |
-| `EVOLUTION_API_KEY` | API Key global para autenticação com a Evolution API |
-
-Estas credenciais são do **administrador do sistema**, não dos usuários finais.
-
-## Arquivos a Criar
-
-### 1. Edge Function: `supabase/functions/whatsapp/index.ts`
-
-Endpoints que serão implementados:
-
-| Endpoint | Descrição |
-|----------|-----------|
-| `POST /create` | Cria instância e retorna QR Code |
-| `GET /status` | Verifica status da conexão |
-| `POST /disconnect` | Desconecta e remove instância |
-| `POST /webhook` | Recebe eventos da Evolution API |
-| `POST /send-message` | Envia mensagem/PDF para cliente |
-
-### 2. Atualização: `src/pages/WhatsApp.tsx`
-
-- Integrar com edge function para gerar QR code real
-- Exibir imagem do QR code (base64)
-- Polling ou realtime para detectar conexão
-- Funções de desconectar e reconectar
-
-### 3. Atualização: `src/contexts/AuthContext.tsx`
-
-- Atualizar `refreshProfile` para buscar status do WhatsApp
-
-## Detalhes Técnicos
-
-### Criação de Instância (Evolution API v2)
-
-```javascript
-// POST {EVOLUTION_API_URL}/instance/create
-{
-  "instanceName": "user_{user_id}",      // Nome único baseado no user_id
-  "integration": "WHATSAPP-BAILEYS",
-  "qrcode": true,                         // Gera QR automaticamente
-  "webhook": {
-    "url": "{SUPABASE_URL}/functions/v1/whatsapp/webhook",
-    "events": ["CONNECTION_UPDATE", "QRCODE_UPDATED"]
-  }
-}
-```
-
-### Resposta com QR Code
-
-```javascript
-{
-  "instance": {
-    "instanceName": "user_abc123",
-    "status": "created"
-  },
-  "qrcode": {
-    "base64": "data:image/png;base64,..."  // Imagem do QR Code
-  }
-}
-```
-
-### Webhook CONNECTION_UPDATE
-
-```javascript
-{
-  "event": "connection.update",
-  "instance": "user_abc123",
-  "data": {
-    "state": "open"  // Conectado!
-  }
-}
-```
-
-## Banco de Dados
-
-Os campos já existem na tabela `profiles`:
-- `whatsapp_connected` (boolean) - Status da conexão
-- `whatsapp_session_id` (string) - Nome da instância na Evolution
-
-## Vantagens desta Abordagem
-
-1. **100% Automatizado** - Usuários não precisam de acesso à Evolution API
-2. **Multi-tenant** - Cada usuário tem sua própria instância isolada
-3. **Seguro** - Credenciais ficam apenas no backend
-4. **Escalável** - Suporta quantos usuários você precisar
-
-## Próximos Passos
-
-Após aprovar este plano:
-
-1. Você informará as credenciais `EVOLUTION_API_URL` e `EVOLUTION_API_KEY`
-2. Criarei a edge function `whatsapp` com todos os endpoints
-3. Atualizarei a página `WhatsApp.tsx` para usar a integração real
-4. Configurarei o webhook na Evolution para receber eventos
-
+Após a implementação:
+1. Desconecte o WhatsApp atual (botão "Desconectar")
+2. Gere um novo QR Code
+3. Escaneie com o WhatsApp
+4. O polling deve detectar a conexão e atualizar automaticamente a interface
