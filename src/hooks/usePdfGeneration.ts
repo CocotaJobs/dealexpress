@@ -4,7 +4,9 @@ import { useToast } from '@/hooks/use-toast';
 
 export interface PdfGenerationResult {
   pdfUrl: string;
+  docxUrl?: string | null;
   fileName: string;
+  usedCustomTemplate?: boolean;
 }
 
 const LOADING_HTML = `
