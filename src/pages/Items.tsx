@@ -47,13 +47,15 @@ import {
   Image,
   Loader2,
   FolderPlus,
+  FileSpreadsheet,
 } from 'lucide-react';
+import { ImportItemsDialog } from '@/components/items/ImportItemsDialog';
 import { useItems, ItemWithCategory } from '@/hooks/useItems';
 import { useCategories } from '@/hooks/useCategories';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function Items() {
-  const { items, isLoading, createItem, updateItem, toggleItemStatus } = useItems();
+  const { items, isLoading, fetchItems, createItem, updateItem, toggleItemStatus } = useItems();
   const { categories, isLoading: categoriesLoading, createCategory } = useCategories();
 
   const [search, setSearch] = useState('');
@@ -61,6 +63,7 @@ export default function Items() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ItemWithCategory | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -173,19 +176,27 @@ export default function Items() {
             Gerencie produtos e serviços do catálogo
           </p>
         </div>
-        <Dialog
-          open={isDialogOpen}
-          onOpenChange={(open) => {
-            setIsDialogOpen(open);
-            if (!open) resetForm();
-          }}
-        >
-          <DialogTrigger asChild>
-            <Button className="bg-gradient-primary shadow-primary hover:opacity-90">
-              <Plus className="w-4 h-4 mr-2" />
-              Novo Item
-            </Button>
-          </DialogTrigger>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setIsImportDialogOpen(true)}
+          >
+            <FileSpreadsheet className="w-4 h-4 mr-2" />
+            Importar Planilha
+          </Button>
+          <Dialog
+            open={isDialogOpen}
+            onOpenChange={(open) => {
+              setIsDialogOpen(open);
+              if (!open) resetForm();
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button className="bg-gradient-primary shadow-primary hover:opacity-90">
+                <Plus className="w-4 h-4 mr-2" />
+                Novo Item
+              </Button>
+            </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>{editingItem ? 'Editar Item' : 'Novo Item'}</DialogTitle>
@@ -377,7 +388,17 @@ export default function Items() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
+
+      {/* Import Dialog */}
+      <ImportItemsDialog
+        open={isImportDialogOpen}
+        onOpenChange={setIsImportDialogOpen}
+        categories={categories}
+        createCategory={createCategory}
+        onImportSuccess={fetchItems}
+      />
 
       {/* Filters */}
       <Card className="shadow-card">
