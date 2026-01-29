@@ -132,44 +132,17 @@ Deno.serve(async (req) => {
       formatDate,
     });
 
-    // Use html2pdf.app API to convert HTML to PDF
-    const pdfResponse = await fetch('https://api.html2pdf.app/v1/generate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        html: htmlContent,
-        apiKey: '7a5d5c1d5e1b4a7a9d1f3b5c7e9f1b3d', // Free tier key for demo
-        options: {
-          format: 'A4',
-          margin: {
-            top: '10mm',
-            bottom: '10mm',
-            left: '15mm',
-            right: '15mm',
-          },
-        },
-      }),
+    // Generate PDF using fallback method (no external API dependency)
+    console.log('Generating PDF using built-in method');
+    const pdfBuffer = await generatePdfFromHtml({
+      proposal,
+      items: items || [],
+      vendor,
+      organization,
+      totalValue,
+      formatCurrency,
+      formatDate,
     });
-
-    let pdfBuffer: ArrayBuffer;
-
-    if (!pdfResponse.ok) {
-      console.log('html2pdf.app failed, using fallback PDF generation');
-      // Fallback: Generate a simple PDF using data URI
-      pdfBuffer = await generateSimplePdf({
-        proposal,
-        items: items || [],
-        vendor,
-        organization,
-        totalValue,
-        formatCurrency,
-        formatDate,
-      });
-    } else {
-      pdfBuffer = await pdfResponse.arrayBuffer();
-    }
 
     // Save PDF to storage
     const fileName = `${proposal.organization_id}/${proposal.proposal_number}.pdf`;
@@ -530,7 +503,7 @@ function generateProposalHtml(data: ProposalData): string {
   `;
 }
 
-async function generateSimplePdf(data: ProposalData): Promise<ArrayBuffer> {
+async function generatePdfFromHtml(data: ProposalData): Promise<ArrayBuffer> {
   // Simple PDF generation using a basic approach
   // This creates a minimal valid PDF structure
   const { proposal, items, organization, totalValue, formatCurrency, formatDate } = data;
