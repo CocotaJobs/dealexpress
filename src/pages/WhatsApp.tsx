@@ -1,46 +1,19 @@
-import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { useAuth } from '@/contexts/AuthContext';
 import { MessageSquare, QrCode, CheckCircle, XCircle, RefreshCw, Loader2 } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import { useWhatsAppConnection } from '@/hooks/useWhatsAppConnection';
 
 export default function WhatsApp() {
-  const { profile, refreshProfile } = useAuth();
-  const { toast } = useToast();
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [showQRCode, setShowQRCode] = useState(false);
-
-  const handleConnect = async () => {
-    setIsConnecting(true);
-    setShowQRCode(true);
-
-    // TODO: Implement real WhatsApp connection via Evolution API
-    // For now, simulate QR code scanning
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-
-    // In the real implementation, this would update via the backend
-    // and we'd refresh the profile to get the new status
-    await refreshProfile();
-    
-    setShowQRCode(false);
-    setIsConnecting(false);
-
-    toast({
-      title: 'WhatsApp conectado!',
-      description: 'Sua conta foi conectada com sucesso.',
-    });
-  };
-
-  const handleDisconnect = async () => {
-    // TODO: Implement real disconnect via Evolution API
-    await refreshProfile();
-    
-    toast({
-      title: 'WhatsApp desconectado',
-      description: 'Sua conta foi desconectada.',
-    });
-  };
+  const {
+    isConnecting,
+    isChecking,
+    showQRCode,
+    qrCodeBase64,
+    isWhatsAppConnected,
+    connect,
+    disconnect,
+    cancel,
+  } = useWhatsAppConnection();
 
   return (
     <div className="p-6 space-y-6 animate-in">
@@ -61,7 +34,7 @@ export default function WhatsApp() {
                 <MessageSquare className="w-5 h-5" />
                 Status da Conexão
               </CardTitle>
-              {profile?.whatsapp_connected ? (
+              {isWhatsAppConnected ? (
                 <div className="flex items-center gap-2 text-success">
                   <CheckCircle className="w-5 h-5" />
                   <span className="font-medium">Conectado</span>
@@ -75,7 +48,7 @@ export default function WhatsApp() {
             </div>
           </CardHeader>
           <CardContent>
-            {profile?.whatsapp_connected ? (
+            {isWhatsAppConnected ? (
               <div className="space-y-4">
                 <div className="p-4 rounded-lg bg-success/10 border border-success/20">
                   <p className="text-sm">
@@ -86,13 +59,18 @@ export default function WhatsApp() {
                 <div className="flex gap-3">
                   <Button
                     variant="outline"
-                    onClick={handleDisconnect}
+                    onClick={disconnect}
+                    disabled={isChecking}
                     className="text-destructive hover:text-destructive"
                   >
-                    <XCircle className="w-4 h-4 mr-2" />
+                    {isChecking ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <XCircle className="w-4 h-4 mr-2" />
+                    )}
                     Desconectar
                   </Button>
-                  <Button variant="outline">
+                  <Button variant="outline" onClick={connect} disabled={isConnecting}>
                     <RefreshCw className="w-4 h-4 mr-2" />
                     Reconectar
                   </Button>
@@ -108,7 +86,8 @@ export default function WhatsApp() {
                 </div>
                 {!showQRCode ? (
                   <Button
-                    onClick={handleConnect}
+                    onClick={connect}
+                    disabled={isConnecting}
                     className="bg-gradient-primary shadow-primary hover:opacity-90"
                   >
                     <QrCode className="w-4 h-4 mr-2" />
@@ -117,16 +96,13 @@ export default function WhatsApp() {
                 ) : (
                   <div className="space-y-4">
                     <div className="p-8 rounded-xl bg-white border-2 border-dashed border-border flex flex-col items-center justify-center">
-                      {isConnecting ? (
+                      {qrCodeBase64 ? (
                         <>
-                          <div className="w-48 h-48 bg-muted rounded-lg flex items-center justify-center mb-4">
-                            <div className="text-center">
-                              <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-2" />
-                              <p className="text-sm text-muted-foreground">
-                                Aguardando leitura do QR Code...
-                              </p>
-                            </div>
-                          </div>
+                          <img
+                            src={qrCodeBase64.startsWith('data:') ? qrCodeBase64 : `data:image/png;base64,${qrCodeBase64}`}
+                            alt="QR Code WhatsApp"
+                            className="w-64 h-64 mb-4"
+                          />
                           <p className="text-sm text-muted-foreground text-center max-w-xs">
                             Abra o WhatsApp no seu celular → Vá em "Aparelhos conectados" → Toque em
                             "Conectar aparelho" → Escaneie o QR Code acima
@@ -134,22 +110,20 @@ export default function WhatsApp() {
                         </>
                       ) : (
                         <>
-                          <CheckCircle className="w-16 h-16 text-success mb-4" />
-                          <p className="font-medium text-success">Conectado com sucesso!</p>
+                          <div className="w-48 h-48 bg-muted rounded-lg flex items-center justify-center mb-4">
+                            <div className="text-center">
+                              <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-2" />
+                              <p className="text-sm text-muted-foreground">
+                                Gerando QR Code...
+                              </p>
+                            </div>
+                          </div>
                         </>
                       )}
                     </div>
-                    {isConnecting && (
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setShowQRCode(false);
-                          setIsConnecting(false);
-                        }}
-                      >
-                        Cancelar
-                      </Button>
-                    )}
+                    <Button variant="outline" onClick={cancel}>
+                      Cancelar
+                    </Button>
                   </div>
                 )}
               </div>
