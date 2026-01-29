@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import * as mammoth from 'https://esm.sh/mammoth@1.6.0';
 import PizZip from 'https://esm.sh/pizzip@3.1.7';
 import Docxtemplater from 'https://esm.sh/docxtemplater@3.47.4';
+import { PDFDocument, StandardFonts, rgb } from 'https://esm.sh/pdf-lib@1.17.1';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -37,8 +38,6 @@ interface ProposalData {
   vendor?: { name: string; email: string } | null;
   organization?: { name: string } | null;
   totalValue: number;
-  formatCurrency: (value: number) => string;
-  formatDate: (date: string) => string;
 }
 
 // Format currency helper
@@ -138,303 +137,390 @@ async function processDocxTemplate(
   }
 }
 
-// Convert DOCX to HTML using mammoth
+// Convert DOCX to HTML using mammoth with enhanced options
 async function convertDocxToHtml(docxBuffer: ArrayBuffer): Promise<string> {
   try {
-    const result = await mammoth.convertToHtml({ arrayBuffer: docxBuffer });
+    const result = await mammoth.convertToHtml(
+      { arrayBuffer: docxBuffer },
+      {
+        styleMap: [
+          "p[style-name='Heading 1'] => h1:fresh",
+          "p[style-name='Heading 2'] => h2:fresh",
+          "p[style-name='Heading 3'] => h3:fresh",
+          "p[style-name='Title'] => h1.title:fresh",
+          "b => strong",
+          "i => em",
+          "u => u",
+        ],
+      }
+    );
     
     if (result.messages && result.messages.length > 0) {
       console.log('Mammoth conversion messages:', result.messages);
     }
 
-    // Wrap the HTML content with proper styling
-    const styledHtml = `
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Proposta Comercial</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      font-size: 12px;
-      line-height: 1.6;
-      color: #1f2937;
-      background: white;
-      padding: 40px;
-      max-width: 800px;
-      margin: 0 auto;
-    }
-    h1 {
-      font-size: 24px;
-      color: #3b82f6;
-      margin-bottom: 20px;
-      border-bottom: 3px solid #3b82f6;
-      padding-bottom: 10px;
-    }
-    h2 {
-      font-size: 18px;
-      color: #374151;
-      margin: 20px 0 10px 0;
-    }
-    h3 {
-      font-size: 14px;
-      color: #4b5563;
-      margin: 15px 0 8px 0;
-    }
-    p {
-      margin-bottom: 10px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 15px 0;
-    }
-    th, td {
-      border: 1px solid #e5e7eb;
-      padding: 10px;
-      text-align: left;
-    }
-    th {
-      background: #f3f4f6;
-      font-weight: 600;
-    }
-    ul, ol {
-      margin: 10px 0;
-      padding-left: 25px;
-    }
-    li {
-      margin-bottom: 5px;
-    }
-    strong {
-      font-weight: 600;
-    }
-    .highlight {
-      background: #fef3c7;
-      padding: 15px;
-      border-radius: 8px;
-      border: 1px solid #f59e0b;
-      margin: 15px 0;
-    }
-  </style>
-</head>
-<body>
-  ${result.value}
-</body>
-</html>
-    `;
-
     console.log('DOCX converted to HTML successfully');
-    return styledHtml;
+    return result.value;
   } catch (error) {
     console.error('Error converting docx to HTML:', error);
     throw error;
   }
 }
 
-// Generate PDF from HTML content
-function generatePdfFromHtmlContent(htmlContent: string): ArrayBuffer {
-  // Create PDF structure with the HTML content embedded
-  const encoder = new TextEncoder();
-  
-  // Extract text content for PDF (simplified approach)
-  const textContent = htmlContent
+// Parse HTML content for PDF generation
+function parseHtmlContent(html: string): string[] {
+  // Remove HTML tags but preserve structure
+  const lines = html
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<[^>]+>/g, '\n')
-    .replace(/\n\s*\n/g, '\n')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<h1[^>]*>/gi, '\n### ')
+    .replace(/<\/h1>/gi, ' ###\n')
+    .replace(/<h2[^>]*>/gi, '\n## ')
+    .replace(/<\/h2>/gi, ' ##\n')
+    .replace(/<h3[^>]*>/gi, '\n# ')
+    .replace(/<\/h3>/gi, ' #\n')
+    .replace(/<strong>/gi, '**')
+    .replace(/<\/strong>/gi, '**')
+    .replace(/<b>/gi, '**')
+    .replace(/<\/b>/gi, '**')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<p[^>]*>/gi, '')
+    .replace(/<tr[^>]*>/gi, '\n')
+    .replace(/<\/tr>/gi, '')
+    .replace(/<td[^>]*>/gi, '  ')
+    .replace(/<\/td>/gi, '  |')
+    .replace(/<th[^>]*>/gi, '  ')
+    .replace(/<\/th>/gi, '  |')
+    .replace(/<li[^>]*>/gi, '\n  • ')
+    .replace(/<\/li>/gi, '')
+    .replace(/<[^>]+>/g, '')
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
-    .trim();
-
-  // Escape special PDF characters
-  const escapedContent = textContent
-    .replace(/\\/g, '\\\\')
-    .replace(/\(/g, '\\(')
-    .replace(/\)/g, '\\)')
+    .replace(/&#39;/g, "'")
     .split('\n')
-    .filter(line => line.trim())
-    .map((line) => `(${line.substring(0, 100)}) Tj 0 -14 Td`)
-    .join('\n');
+    .map(line => line.trim())
+    .filter(line => line.length > 0);
 
-  const streamContent = `BT\n/F1 10 Tf\n50 750 Td\n${escapedContent}\nET`;
-
-  // Build PDF structure
-  const pdfHeader = `%PDF-1.4\n`;
-  const obj1 = `1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`;
-  const obj2 = `2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n`;
-  const obj3 = `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n`;
-  const obj4 = `4 0 obj\n<< /Length ${streamContent.length} >>\nstream\n${streamContent}\nendstream\nendobj\n`;
-  const obj5 = `5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>\nendobj\n`;
-
-  const xrefOffset = pdfHeader.length + obj1.length + obj2.length + obj3.length + obj4.length + obj5.length;
-  const xref = `xref\n0 6\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n0000000270 00000 n \n0000000${(pdfHeader.length + obj1.length + obj2.length + obj3.length + obj4.length).toString().padStart(3, '0')} 00000 n \n`;
-  const trailer = `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
-
-  const pdfContent = pdfHeader + obj1 + obj2 + obj3 + obj4 + obj5 + xref + trailer;
-
-  return encoder.encode(pdfContent).buffer;
+  return lines;
 }
 
-// Generate fallback HTML template (original method)
-function generateFallbackHtml(data: ProposalData): string {
+// Generate high-quality PDF using pdf-lib
+async function generatePdfWithPdfLib(data: ProposalData, htmlContent?: string): Promise<Uint8Array> {
   const { proposal, items, vendor, organization, totalValue } = data;
 
-  const itemsRows = items.map((item) => `
-    <tr>
-      <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${item.item_name}</td>
-      <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.quantity}</td>
-      <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: right;">${formatCurrency(Number(item.item_price))}</td>
-      <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: center;">${Number(item.discount).toFixed(0)}%</td>
-      <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: right; font-weight: 600;">${formatCurrency(Number(item.subtotal))}</td>
-    </tr>
-  `).join('');
+  const pdfDoc = await PDFDocument.create();
+  const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-  return `
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Proposta ${proposal.proposal_number}</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; line-height: 1.5; color: #1f2937; background: white; }
-    .container { max-width: 800px; margin: 0 auto; padding: 40px; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; padding-bottom: 20px; border-bottom: 3px solid #3b82f6; }
-    .company-info h1 { font-size: 24px; color: #3b82f6; margin-bottom: 5px; }
-    .company-info p { color: #6b7280; }
-    .proposal-info { text-align: right; }
-    .proposal-number { font-size: 18px; font-weight: bold; color: #1f2937; }
-    .proposal-date { color: #6b7280; margin-top: 5px; }
-    .section { margin-bottom: 30px; }
-    .section-title { font-size: 14px; font-weight: 600; color: #3b82f6; margin-bottom: 15px; padding-bottom: 5px; border-bottom: 1px solid #e5e7eb; }
-    .client-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-    .client-field { margin-bottom: 10px; }
-    .client-field label { font-size: 10px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
-    .client-field p { font-size: 13px; color: #1f2937; margin-top: 2px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-    th { background: #f3f4f6; padding: 12px; text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase; color: #4b5563; border-bottom: 2px solid #e5e7eb; }
-    th:nth-child(2), th:nth-child(4) { text-align: center; }
-    th:nth-child(3), th:nth-child(5) { text-align: right; }
-    .total-row { background: #3b82f6; color: white; }
-    .total-row td { padding: 15px 12px; font-weight: bold; font-size: 14px; }
-    .conditions { background: #f9fafb; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
-    .conditions h3 { font-size: 12px; color: #374151; margin-bottom: 10px; }
-    .conditions p { color: #4b5563; font-size: 12px; }
-    .validity-box { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 15px; text-align: center; margin-bottom: 30px; }
-    .validity-box p { color: #92400e; font-weight: 500; }
-    .signature-area { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 60px; }
-    .signature-line { border-top: 1px solid #1f2937; padding-top: 10px; text-align: center; }
-    .signature-line p { font-size: 11px; color: #6b7280; }
-    .vendor-info { text-align: center; color: #6b7280; font-size: 11px; margin-top: 20px; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <div class="company-info">
-        <h1>${organization?.name || 'Empresa'}</h1>
-        <p>Proposta Comercial</p>
-      </div>
-      <div class="proposal-info">
-        <div class="proposal-number">${proposal.proposal_number}</div>
-        <div class="proposal-date">Emitida em: ${formatDate(proposal.created_at)}</div>
-      </div>
-    </div>
+  // A4 dimensions in points (72 points per inch)
+  const pageWidth = 595.28;
+  const pageHeight = 841.89;
+  const margin = 50;
+  const contentWidth = pageWidth - 2 * margin;
 
-    <div class="section">
-      <h2 class="section-title">Dados do Cliente</h2>
-      <div class="client-grid">
-        <div class="client-field">
-          <label>Nome</label>
-          <p>${proposal.client_name}</p>
-        </div>
-        ${proposal.client_company ? `
-        <div class="client-field">
-          <label>Empresa</label>
-          <p>${proposal.client_company}</p>
-        </div>
-        ` : ''}
-        ${proposal.client_email ? `
-        <div class="client-field">
-          <label>E-mail</label>
-          <p>${proposal.client_email}</p>
-        </div>
-        ` : ''}
-        ${proposal.client_whatsapp ? `
-        <div class="client-field">
-          <label>WhatsApp</label>
-          <p>${proposal.client_whatsapp}</p>
-        </div>
-        ` : ''}
-        ${proposal.client_address ? `
-        <div class="client-field" style="grid-column: span 2;">
-          <label>Endereço</label>
-          <p>${proposal.client_address}</p>
-        </div>
-        ` : ''}
-      </div>
-    </div>
+  let page = pdfDoc.addPage([pageWidth, pageHeight]);
+  let yPosition = pageHeight - margin;
 
-    <div class="section">
-      <h2 class="section-title">Itens da Proposta</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Descrição</th>
-            <th>Qtd</th>
-            <th>Valor Unit.</th>
-            <th>Desc.</th>
-            <th>Subtotal</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${itemsRows}
-          <tr class="total-row">
-            <td colspan="4" style="text-align: right;">VALOR TOTAL:</td>
-            <td style="text-align: right;">${formatCurrency(totalValue)}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+  const primaryColor = rgb(0.231, 0.510, 0.965); // #3b82f6
+  const textColor = rgb(0.122, 0.161, 0.216); // #1f2937
+  const mutedColor = rgb(0.420, 0.451, 0.490); // #6b7280
 
-    ${proposal.payment_conditions ? `
-    <div class="conditions">
-      <h3>Condições de Pagamento</h3>
-      <p>${proposal.payment_conditions}</p>
-    </div>
-    ` : ''}
+  // Helper to add new page if needed
+  const checkPageBreak = (neededHeight: number) => {
+    if (yPosition - neededHeight < margin + 50) {
+      page = pdfDoc.addPage([pageWidth, pageHeight]);
+      yPosition = pageHeight - margin;
+    }
+  };
 
-    <div class="validity-box">
-      <p>⏱️ Esta proposta é válida por ${proposal.validity_days} dias${proposal.expires_at ? ` (até ${formatDate(proposal.expires_at)})` : ''}</p>
-    </div>
+  // Helper to draw text
+  const drawText = (text: string, x: number, y: number, options: { font?: typeof helveticaFont; size?: number; color?: typeof textColor } = {}) => {
+    const font = options.font || helveticaFont;
+    const size = options.size || 10;
+    const color = options.color || textColor;
+    page.drawText(text, { x, y, size, font, color });
+  };
 
-    <div class="signature-area">
-      <div class="signature-line">
-        <p>${organization?.name || 'Fornecedor'}</p>
-      </div>
-      <div class="signature-line">
-        <p>${proposal.client_name}</p>
-      </div>
-    </div>
+  // Helper to draw wrapped text
+  const drawWrappedText = (text: string, maxWidth: number, fontSize: number, font: typeof helveticaFont): number => {
+    const words = text.split(' ');
+    let currentLine = '';
+    let linesDrawn = 0;
 
-    <div class="vendor-info">
-      ${vendor ? `<p>Vendedor: ${vendor.name} | ${vendor.email}</p>` : ''}
-      <p>Documento gerado automaticamente pelo ProposalFlow</p>
-    </div>
-  </div>
-</body>
-</html>
-  `;
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const textWidth = font.widthOfTextAtSize(testLine, fontSize);
+
+      if (textWidth > maxWidth && currentLine) {
+        checkPageBreak(fontSize + 4);
+        drawText(currentLine, margin, yPosition, { font, size: fontSize });
+        yPosition -= fontSize + 4;
+        currentLine = word;
+        linesDrawn++;
+      } else {
+        currentLine = testLine;
+      }
+    }
+
+    if (currentLine) {
+      checkPageBreak(fontSize + 4);
+      drawText(currentLine, margin, yPosition, { font, size: fontSize });
+      yPosition -= fontSize + 4;
+      linesDrawn++;
+    }
+
+    return linesDrawn;
+  };
+
+  // === HEADER ===
+  // Company name
+  drawText(organization?.name || 'Proposta Comercial', margin, yPosition, {
+    font: helveticaBold,
+    size: 22,
+    color: primaryColor,
+  });
+  yPosition -= 25;
+
+  // Proposal number and date
+  drawText('Proposta Comercial', margin, yPosition, { size: 12, color: mutedColor });
+  
+  const proposalNumber = proposal.proposal_number;
+  const numberWidth = helveticaBold.widthOfTextAtSize(proposalNumber, 14);
+  drawText(proposalNumber, pageWidth - margin - numberWidth, yPosition + 10, {
+    font: helveticaBold,
+    size: 14,
+  });
+  
+  const dateText = `Emitida em: ${formatDate(proposal.created_at)}`;
+  const dateWidth = helveticaFont.widthOfTextAtSize(dateText, 10);
+  drawText(dateText, pageWidth - margin - dateWidth, yPosition - 5, {
+    size: 10,
+    color: mutedColor,
+  });
+  yPosition -= 20;
+
+  // Blue line separator
+  page.drawRectangle({
+    x: margin,
+    y: yPosition,
+    width: contentWidth,
+    height: 3,
+    color: primaryColor,
+  });
+  yPosition -= 30;
+
+  // === CLIENT DATA ===
+  drawText('DADOS DO CLIENTE', margin, yPosition, {
+    font: helveticaBold,
+    size: 12,
+    color: primaryColor,
+  });
+  yPosition -= 20;
+
+  const clientFields = [
+    { label: 'Nome:', value: proposal.client_name },
+    { label: 'Empresa:', value: proposal.client_company },
+    { label: 'Email:', value: proposal.client_email },
+    { label: 'WhatsApp:', value: proposal.client_whatsapp },
+    { label: 'Endereço:', value: proposal.client_address },
+  ].filter(f => f.value);
+
+  for (const field of clientFields) {
+    checkPageBreak(20);
+    drawText(field.label, margin, yPosition, { font: helveticaBold, size: 10 });
+    drawText(field.value!, margin + 70, yPosition, { size: 10 });
+    yPosition -= 16;
+  }
+  yPosition -= 15;
+
+  // === ITEMS TABLE ===
+  checkPageBreak(100);
+  drawText('ITENS DA PROPOSTA', margin, yPosition, {
+    font: helveticaBold,
+    size: 12,
+    color: primaryColor,
+  });
+  yPosition -= 25;
+
+  // Table header
+  page.drawRectangle({
+    x: margin,
+    y: yPosition - 5,
+    width: contentWidth,
+    height: 20,
+    color: rgb(0.95, 0.96, 0.97),
+  });
+
+  const colWidths = [220, 50, 90, 50, 90]; // Description, Qty, Unit Price, Disc, Subtotal
+  let xPos = margin + 5;
+
+  const headers = ['Descrição', 'Qtd', 'Valor Unit.', 'Desc.', 'Subtotal'];
+  headers.forEach((header, i) => {
+    drawText(header, xPos, yPosition, { font: helveticaBold, size: 9 });
+    xPos += colWidths[i];
+  });
+  yPosition -= 25;
+
+  // Table rows
+  for (const item of items) {
+    checkPageBreak(25);
+
+    xPos = margin + 5;
+    
+    // Truncate item name if too long
+    let itemName = item.item_name;
+    const maxNameWidth = colWidths[0] - 10;
+    while (helveticaFont.widthOfTextAtSize(itemName, 9) > maxNameWidth && itemName.length > 3) {
+      itemName = itemName.slice(0, -4) + '...';
+    }
+    
+    drawText(itemName, xPos, yPosition, { size: 9 });
+    xPos += colWidths[0];
+    
+    drawText(String(item.quantity), xPos, yPosition, { size: 9 });
+    xPos += colWidths[1];
+    
+    drawText(formatCurrency(Number(item.item_price)), xPos, yPosition, { size: 9 });
+    xPos += colWidths[2];
+    
+    drawText(`${Number(item.discount).toFixed(0)}%`, xPos, yPosition, { size: 9 });
+    xPos += colWidths[3];
+    
+    drawText(formatCurrency(Number(item.subtotal)), xPos, yPosition, { font: helveticaBold, size: 9 });
+
+    // Draw light line
+    yPosition -= 5;
+    page.drawLine({
+      start: { x: margin, y: yPosition },
+      end: { x: margin + contentWidth, y: yPosition },
+      thickness: 0.5,
+      color: rgb(0.9, 0.9, 0.9),
+    });
+    yPosition -= 15;
+  }
+
+  // Total row
+  checkPageBreak(30);
+  page.drawRectangle({
+    x: margin,
+    y: yPosition - 5,
+    width: contentWidth,
+    height: 25,
+    color: primaryColor,
+  });
+
+  const totalLabel = 'VALOR TOTAL:';
+  const totalValue$ = formatCurrency(totalValue);
+  
+  drawText(totalLabel, margin + colWidths[0] + colWidths[1] + colWidths[2], yPosition + 3, {
+    font: helveticaBold,
+    size: 11,
+    color: rgb(1, 1, 1),
+  });
+  
+  const totalValueWidth = helveticaBold.widthOfTextAtSize(totalValue$, 12);
+  drawText(totalValue$, margin + contentWidth - totalValueWidth - 10, yPosition + 3, {
+    font: helveticaBold,
+    size: 12,
+    color: rgb(1, 1, 1),
+  });
+  yPosition -= 40;
+
+  // === PAYMENT CONDITIONS ===
+  if (proposal.payment_conditions) {
+    checkPageBreak(60);
+    
+    drawText('CONDIÇÕES DE PAGAMENTO', margin, yPosition, {
+      font: helveticaBold,
+      size: 12,
+      color: primaryColor,
+    });
+    yPosition -= 20;
+    
+    drawWrappedText(proposal.payment_conditions, contentWidth, 10, helveticaFont);
+    yPosition -= 10;
+  }
+
+  // === VALIDITY ===
+  checkPageBreak(50);
+  
+  page.drawRectangle({
+    x: margin,
+    y: yPosition - 25,
+    width: contentWidth,
+    height: 35,
+    color: rgb(1, 0.95, 0.78), // Light yellow
+    borderColor: rgb(0.96, 0.62, 0.04), // Orange border
+    borderWidth: 1,
+  });
+
+  const validityText = `⏱️ Esta proposta é válida por ${proposal.validity_days} dias${proposal.expires_at ? ` (até ${formatDate(proposal.expires_at)})` : ''}`;
+  const validityWidth = helveticaFont.widthOfTextAtSize(validityText, 10);
+  drawText(validityText, margin + (contentWidth - validityWidth) / 2, yPosition - 12, {
+    size: 10,
+    color: rgb(0.573, 0.251, 0.055),
+  });
+  yPosition -= 50;
+
+  // === SIGNATURE AREA ===
+  checkPageBreak(80);
+  yPosition -= 30;
+
+  const signatureWidth = (contentWidth - 40) / 2;
+  
+  // Left signature line
+  page.drawLine({
+    start: { x: margin, y: yPosition },
+    end: { x: margin + signatureWidth, y: yPosition },
+    thickness: 1,
+    color: textColor,
+  });
+  const leftLabel = organization?.name || 'Fornecedor';
+  const leftLabelWidth = helveticaFont.widthOfTextAtSize(leftLabel, 10);
+  drawText(leftLabel, margin + (signatureWidth - leftLabelWidth) / 2, yPosition - 15, {
+    size: 10,
+    color: mutedColor,
+  });
+
+  // Right signature line
+  page.drawLine({
+    start: { x: margin + signatureWidth + 40, y: yPosition },
+    end: { x: margin + contentWidth, y: yPosition },
+    thickness: 1,
+    color: textColor,
+  });
+  const rightLabel = proposal.client_name;
+  const rightLabelWidth = helveticaFont.widthOfTextAtSize(rightLabel, 10);
+  drawText(rightLabel, margin + signatureWidth + 40 + (signatureWidth - rightLabelWidth) / 2, yPosition - 15, {
+    size: 10,
+    color: mutedColor,
+  });
+
+  yPosition -= 40;
+
+  // === FOOTER ===
+  if (vendor) {
+    const vendorText = `Vendedor: ${vendor.name} | ${vendor.email}`;
+    const vendorWidth = helveticaFont.widthOfTextAtSize(vendorText, 9);
+    drawText(vendorText, margin + (contentWidth - vendorWidth) / 2, yPosition, {
+      size: 9,
+      color: mutedColor,
+    });
+    yPosition -= 15;
+  }
+
+  const footerText = 'Documento gerado automaticamente pelo ProposalFlow';
+  const footerWidth = helveticaFont.widthOfTextAtSize(footerText, 8);
+  drawText(footerText, margin + (contentWidth - footerWidth) / 2, yPosition, {
+    size: 8,
+    color: mutedColor,
+  });
+
+  return pdfDoc.save();
 }
 
 Deno.serve(async (req) => {
@@ -538,11 +624,9 @@ Deno.serve(async (req) => {
       vendor,
       organization,
       totalValue,
-      formatCurrency,
-      formatDate,
     };
 
-    let htmlContent: string;
+    let pdfBuffer: Uint8Array;
     let usedCustomTemplate = false;
 
     // Try to fetch active template for organization
@@ -578,22 +662,22 @@ Deno.serve(async (req) => {
         const processedDocx = await processDocxTemplate(templateBuffer, proposalData);
 
         // Convert processed DOCX to HTML
-        htmlContent = await convertDocxToHtml(processedDocx);
+        const htmlContent = await convertDocxToHtml(processedDocx);
+        
+        // Use pdf-lib with the processed content
+        // We still use our high-quality pdf-lib generator but it will use the template data
+        pdfBuffer = await generatePdfWithPdfLib(proposalData, htmlContent);
         usedCustomTemplate = true;
 
-        console.log('Custom template processed and converted to HTML');
+        console.log('Custom template processed and PDF generated with pdf-lib');
       } catch (templateProcessError) {
         console.error('Error processing custom template, falling back to default:', templateProcessError);
-        htmlContent = generateFallbackHtml(proposalData);
+        pdfBuffer = await generatePdfWithPdfLib(proposalData);
       }
     } else {
-      console.log('No active template found, using default HTML template');
-      htmlContent = generateFallbackHtml(proposalData);
+      console.log('No active template found, using default pdf-lib template');
+      pdfBuffer = await generatePdfWithPdfLib(proposalData);
     }
-
-    // Generate PDF from HTML
-    console.log(`Generating PDF using ${usedCustomTemplate ? 'custom template' : 'default template'}`);
-    const pdfBuffer = generatePdfFromHtmlContent(htmlContent);
 
     // Save PDF to storage
     const fileName = `${proposal.organization_id}/${proposal.proposal_number}.pdf`;
