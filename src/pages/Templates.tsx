@@ -24,6 +24,7 @@ const dynamicFields = [
   { field: '{{cliente_empresa}}', description: 'Nome da empresa do cliente' },
   { field: '{{cliente_endereco}}', description: 'Endereço do cliente' },
   { field: '{{data}}', description: 'Data de geração da proposta' },
+  { field: '{{data_extenso}}', description: 'Data atual por extenso (ex: 29 de Janeiro de 2026)' },
   { field: '{{numero_proposta}}', description: 'Número único da proposta' },
   { field: '{{vendedor_nome}}', description: 'Nome do vendedor' },
   { field: '{{tabela_itens}}', description: 'Tabela com itens da proposta' },
