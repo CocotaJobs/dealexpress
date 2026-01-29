@@ -58,6 +58,19 @@ const formatDate = (dateStr: string): string => {
   });
 };
 
+// Format date extended (e.g., "29 de Janeiro de 2026")
+const formatDateExtended = (): string => {
+  const months = [
+    'Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho',
+    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+  ];
+  const now = new Date();
+  const day = now.getDate();
+  const month = months[now.getMonth()];
+  const year = now.getFullYear();
+  return `${day} de ${month} de ${year}`;
+};
+
 // Generate items table as formatted text
 function generateItemsTable(items: ProposalItem[], totalValue: number): string {
   let table = 'ITENS DA PROPOSTA\n';
