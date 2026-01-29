@@ -53,7 +53,7 @@ export default function EditProposal() {
   const { profile } = useAuth();
   const { items, isLoading: itemsLoading } = useItems();
   const { updateProposal, sendProposal } = useProposals();
-  const { isGenerating, generatePdf, previewPdf } = usePdfGeneration();
+  const { isGenerating, generatePdf, previewPdf, openPdfPreviewWindow } = usePdfGeneration();
 
   const [isItemDialogOpen, setIsItemDialogOpen] = useState(false);
   const [itemSearch, setItemSearch] = useState('');
@@ -280,9 +280,20 @@ export default function EditProposal() {
       return;
     }
 
+    // IMPORTANT: Open window BEFORE any await to avoid Chrome popup blocking
+    const previewWindow = openPdfPreviewWindow();
+    if (!previewWindow) {
+      toast({
+        title: 'Popup bloqueado',
+        description: 'Permita popups para este site ou use "Baixar PDF".',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsPreviewing(true);
 
-    // First save the proposal
+    // Now save the proposal
     const result = await updateProposal(
       id,
       {
@@ -298,7 +309,11 @@ export default function EditProposal() {
     );
 
     if (result.data) {
-      await previewPdf(id);
+      // Generate and preview PDF using the pre-opened window
+      await previewPdf(id, previewWindow);
+    } else {
+      // Close the window if save failed
+      previewWindow.close();
     }
 
     setIsPreviewing(false);
