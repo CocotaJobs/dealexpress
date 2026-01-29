@@ -61,7 +61,7 @@ const formatDate = (dateStr: string): string => {
 // Format date extended (e.g., "29 de Janeiro de 2026")
 const formatDateExtended = (): string => {
   const months = [
-    'Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho',
+    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
     'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
   ];
   const now = new Date();
@@ -70,6 +70,67 @@ const formatDateExtended = (): string => {
   const year = now.getFullYear();
   return `${day} de ${month} de ${year}`;
 };
+
+// Sanitize text for PDF rendering (WinAnsi compatible)
+// Removes/replaces characters that pdf-lib cannot encode
+function sanitizePdfText(input: string): string {
+  if (!input) return '';
+  
+  let sanitized = input
+    // Replace tabs with spaces
+    .replace(/\t/g, '    ')
+    // Replace non-breaking spaces
+    .replace(/\u00A0/g, ' ')
+    // Replace smart quotes with regular quotes
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    // Replace em-dash and en-dash with regular dash
+    .replace(/[\u2013\u2014]/g, '-')
+    // Replace ellipsis with three dots
+    .replace(/\u2026/g, '...')
+    // Replace bullet point with dash
+    .replace(/\u2022/g, '-')
+    // Remove zero-width characters
+    .replace(/[\u200B\u200C\u200D\uFEFF]/g, '')
+    // Remove other control characters (except newline, carriage return)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+  
+  return sanitized;
+}
+
+// Safe text width measurement with fallback
+function safeWidthOfText(font: any, text: string, fontSize: number): number {
+  try {
+    return font.widthOfTextAtSize(text, fontSize);
+  } catch (error) {
+    // If measurement fails, try with more aggressive sanitization
+    const fallbackText = text.replace(/[^\x20-\x7E]/g, '?');
+    console.log(`Text sanitization fallback applied for: "${text.substring(0, 30)}..."`);
+    try {
+      return font.widthOfTextAtSize(fallbackText, fontSize);
+    } catch {
+      // Ultimate fallback: estimate based on character count
+      return fallbackText.length * fontSize * 0.5;
+    }
+  }
+}
+
+// Safe text drawing with fallback
+function safeDrawText(page: any, text: string, options: any): void {
+  try {
+    page.drawText(text, options);
+  } catch (error) {
+    // If drawing fails, try with ASCII-only version
+    const fallbackText = text.replace(/[^\x20-\x7E]/g, '?');
+    console.log(`Text drawing fallback applied for: "${text.substring(0, 30)}..."`);
+    try {
+      page.drawText(fallbackText, options);
+    } catch {
+      // Skip this text entirely if it still fails
+      console.error(`Failed to draw text even with fallback: "${text.substring(0, 30)}..."`);
+    }
+  }
+}
 
 // Generate items table as formatted text
 function generateItemsTable(items: ProposalItem[], totalValue: number): string {
@@ -206,7 +267,7 @@ function parseHtmlContent(html: string): string[] {
     .replace(/<\/td>/gi, '  |')
     .replace(/<th[^>]*>/gi, '  ')
     .replace(/<\/th>/gi, '  |')
-    .replace(/<li[^>]*>/gi, '\n  • ')
+    .replace(/<li[^>]*>/gi, '\n  - ')
     .replace(/<\/li>/gi, '')
     .replace(/<[^>]+>/g, '')
     .replace(/&nbsp;/g, ' ')
@@ -216,7 +277,7 @@ function parseHtmlContent(html: string): string[] {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .split('\n')
-    .map(line => line.trim())
+    .map(line => sanitizePdfText(line.trim()))  // Apply sanitization to each line
     .filter(line => line.length > 0);
 
   return lines;
@@ -251,7 +312,10 @@ async function generatePdfFromHtml(htmlContent: string, data: ProposalData): Pro
   // Parse HTML content to lines
   const lines = parseHtmlContent(htmlContent);
 
-  for (const line of lines) {
+  for (const rawLine of lines) {
+    // Sanitize the line for PDF compatibility
+    const line = sanitizePdfText(rawLine);
+    
     // Detect headings
     const isH1 = line.startsWith('### ') && line.endsWith(' ###');
     const isH2 = line.startsWith('## ') && line.endsWith(' ##');
@@ -286,24 +350,28 @@ async function generatePdfFromHtml(htmlContent: string, data: ProposalData): Pro
       font = helveticaBold;
     }
 
-    // Handle bullet points
-    if (text.startsWith('  • ')) {
-      text = '  • ' + text.substring(4);
+    // Handle bullet points (now using dash since bullet may not render)
+    if (text.startsWith('  - ')) {
+      text = '  - ' + text.substring(4);
     }
 
-    // Word wrap logic
+    // Sanitize the final text before rendering
+    text = sanitizePdfText(text);
+
+    // Word wrap logic with safe width measurement
     const words = text.split(' ');
     let currentLine = '';
 
     for (const word of words) {
-      const testLine = currentLine ? `${currentLine} ${word}` : word;
-      const testWidth = font.widthOfTextAtSize(testLine, fontSize);
+      const sanitizedWord = sanitizePdfText(word);
+      const testLine = currentLine ? `${currentLine} ${sanitizedWord}` : sanitizedWord;
+      const testWidth = safeWidthOfText(font, testLine, fontSize);
 
       if (testWidth > contentWidth && currentLine) {
         checkPageBreak(fontSize + 4);
-        page.drawText(currentLine, { x: margin, y: yPosition, size: fontSize, font, color });
+        safeDrawText(page, currentLine, { x: margin, y: yPosition, size: fontSize, font, color });
         yPosition -= fontSize + 4;
-        currentLine = word;
+        currentLine = sanitizedWord;
       } else {
         currentLine = testLine;
       }
@@ -311,7 +379,7 @@ async function generatePdfFromHtml(htmlContent: string, data: ProposalData): Pro
 
     if (currentLine) {
       checkPageBreak(fontSize + 4);
-      page.drawText(currentLine, { x: margin, y: yPosition, size: fontSize, font, color });
+      safeDrawText(page, currentLine, { x: margin, y: yPosition, size: fontSize, font, color });
       yPosition -= fontSize + 6;
     }
   }
