@@ -12,6 +12,8 @@ import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Proposals from "./pages/Proposals";
 import NewProposal from "./pages/NewProposal";
+import ViewProposal from "./pages/ViewProposal";
+import EditProposal from "./pages/EditProposal";
 import Items from "./pages/Items";
 import Templates from "./pages/Templates";
 import Users from "./pages/Users";
@@ -37,6 +39,8 @@ const App = () => (
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/proposals" element={<Proposals />} />
               <Route path="/proposals/new" element={<NewProposal />} />
+              <Route path="/proposals/:id" element={<ViewProposal />} />
+              <Route path="/proposals/:id/edit" element={<EditProposal />} />
               <Route path="/items" element={<Items />} />
               <Route path="/templates" element={<Templates />} />
               <Route path="/users" element={<Users />} />
