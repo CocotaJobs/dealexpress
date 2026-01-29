@@ -2,6 +2,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   FileText,
   TrendingUp,
@@ -9,9 +10,12 @@ import {
   Clock,
   PlusCircle,
   ArrowUpRight,
+  ArrowDownRight,
   FileCheck,
   Users,
   Package,
+  Send,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   LineChart,
@@ -23,35 +27,39 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
+  PieChart,
+  Pie,
+  Cell,
 } from 'recharts';
-
-// Mock data for charts
-const monthlyData = [
-  { month: 'Jul', propostas: 12, valor: 45000 },
-  { month: 'Ago', propostas: 19, valor: 72000 },
-  { month: 'Set', propostas: 15, valor: 58000 },
-  { month: 'Out', propostas: 22, valor: 85000 },
-  { month: 'Nov', propostas: 28, valor: 112000 },
-  { month: 'Dez', propostas: 35, valor: 145000 },
-];
-
-const topItemsData = [
-  { name: 'Parafusadeira Pro X', count: 45 },
-  { name: 'Máquina CNC 3000', count: 38 },
-  { name: 'Kit Ferramentas', count: 32 },
-  { name: 'Compressor Industrial', count: 28 },
-  { name: 'Serra Circular HD', count: 24 },
-];
+import { useDashboardMetrics } from '@/hooks/useDashboardMetrics';
 
 interface StatCardProps {
   title: string;
   value: string;
   change?: string;
-  changeType?: 'positive' | 'negative';
+  changeType?: 'positive' | 'negative' | 'neutral';
   icon: React.ElementType;
+  isLoading?: boolean;
 }
 
-function StatCard({ title, value, change, changeType, icon: Icon }: StatCardProps) {
+function StatCard({ title, value, change, changeType, icon: Icon, isLoading }: StatCardProps) {
+  if (isLoading) {
+    return (
+      <Card className="stat-card">
+        <CardContent className="p-0">
+          <div className="flex items-start justify-between">
+            <div className="space-y-2 flex-1">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-8 w-32" />
+              <Skeleton className="h-4 w-28" />
+            </div>
+            <Skeleton className="w-12 h-12 rounded-xl" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="stat-card">
       <CardContent className="p-0">
@@ -62,12 +70,18 @@ function StatCard({ title, value, change, changeType, icon: Icon }: StatCardProp
             {change && (
               <div
                 className={`flex items-center gap-1 text-sm font-medium ${
-                  changeType === 'positive' ? 'text-success' : 'text-destructive'
+                  changeType === 'positive'
+                    ? 'text-green-600 dark:text-green-400'
+                    : changeType === 'negative'
+                    ? 'text-destructive'
+                    : 'text-muted-foreground'
                 }`}
               >
-                <ArrowUpRight
-                  className={`w-4 h-4 ${changeType === 'negative' ? 'rotate-180' : ''}`}
-                />
+                {changeType === 'positive' ? (
+                  <ArrowUpRight className="w-4 h-4" />
+                ) : changeType === 'negative' ? (
+                  <ArrowDownRight className="w-4 h-4" />
+                ) : null}
                 {change}
               </div>
             )}
@@ -81,8 +95,11 @@ function StatCard({ title, value, change, changeType, icon: Icon }: StatCardProp
   );
 }
 
+const COLORS = ['hsl(var(--primary))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))'];
+
 export default function Dashboard() {
   const { profile } = useAuth();
+  const { metrics, isLoading } = useDashboardMetrics();
   const isAdmin = profile?.role === 'admin';
 
   const formatCurrency = (value: number) => {
@@ -90,8 +107,28 @@ export default function Dashboard() {
       style: 'currency',
       currency: 'BRL',
       minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
     }).format(value);
   };
+
+  const formatCompactCurrency = (value: number) => {
+    if (value >= 1000000) {
+      return `R$ ${(value / 1000000).toFixed(1)}M`;
+    }
+    if (value >= 1000) {
+      return `R$ ${(value / 1000).toFixed(0)}K`;
+    }
+    return formatCurrency(value);
+  };
+
+  const pieData = [
+    { name: 'Rascunho', value: metrics.proposals.byStatus.draft, color: 'hsl(var(--muted-foreground))' },
+    { name: 'Enviadas', value: metrics.proposals.byStatus.sent, color: 'hsl(var(--primary))' },
+    { name: 'Expiradas', value: metrics.proposals.byStatus.expired, color: 'hsl(var(--destructive))' },
+  ].filter(item => item.value > 0);
+
+  const proposalsChange = metrics.previousMonthComparison.proposalsChange;
+  const valueChange = metrics.previousMonthComparison.valueChange;
 
   return (
     <div className="p-6 space-y-6 animate-in">
@@ -119,68 +156,197 @@ export default function Dashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="Total de Propostas"
-          value={isAdmin ? '247' : '42'}
-          change="+12% vs mês anterior"
-          changeType="positive"
+          value={metrics.proposals.total.toString()}
+          change={proposalsChange !== 0 ? `${proposalsChange > 0 ? '+' : ''}${proposalsChange}% vs mês anterior` : undefined}
+          changeType={proposalsChange > 0 ? 'positive' : proposalsChange < 0 ? 'negative' : 'neutral'}
           icon={FileText}
+          isLoading={isLoading}
         />
         <StatCard
           title="Valor Total"
-          value={formatCurrency(isAdmin ? 1250000 : 185000)}
-          change="+8% vs mês anterior"
-          changeType="positive"
+          value={formatCompactCurrency(metrics.proposals.totalValue)}
+          change={valueChange !== 0 ? `${valueChange > 0 ? '+' : ''}${valueChange}% vs mês anterior` : undefined}
+          changeType={valueChange > 0 ? 'positive' : valueChange < 0 ? 'negative' : 'neutral'}
           icon={DollarSign}
+          isLoading={isLoading}
         />
         <StatCard
           title={isAdmin ? 'Ticket Médio' : 'Propostas Enviadas'}
-          value={isAdmin ? formatCurrency(5060) : '38'}
-          change="+5%"
-          changeType="positive"
+          value={isAdmin ? formatCurrency(metrics.proposals.avgValue) : metrics.proposals.byStatus.sent.toString()}
           icon={isAdmin ? TrendingUp : FileCheck}
+          isLoading={isLoading}
         />
         <StatCard
-          title={isAdmin ? 'Vendedores Ativos' : 'Rascunhos'}
-          value={isAdmin ? '8' : '4'}
+          title={isAdmin ? 'Usuários Ativos' : 'Rascunhos'}
+          value={isAdmin ? metrics.users.active.toString() : metrics.proposals.byStatus.draft.toString()}
           icon={isAdmin ? Users : Clock}
+          isLoading={isLoading}
         />
       </div>
 
-      {/* Charts */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      {/* Charts Row */}
+      <div className="grid gap-6 lg:grid-cols-3">
         {/* Line Chart - Propostas por Período */}
-        <Card className="shadow-card">
+        <Card className="shadow-card lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-lg font-semibold">Propostas por Período</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={monthlyData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis
-                    dataKey="month"
-                    stroke="hsl(var(--muted-foreground))"
-                    fontSize={12}
-                  />
-                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="propostas"
-                    stroke="hsl(var(--primary))"
-                    strokeWidth={2}
-                    dot={{ fill: 'hsl(var(--primary))', r: 4 }}
-                    activeDot={{ r: 6 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+            {isLoading ? (
+              <Skeleton className="h-[300px] w-full" />
+            ) : metrics.monthlyData.length === 0 ? (
+              <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                <div className="text-center">
+                  <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                  <p>Nenhuma proposta ainda</p>
+                </div>
+              </div>
+            ) : (
+              <div className="h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={metrics.monthlyData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis
+                      dataKey="month"
+                      stroke="hsl(var(--muted-foreground))"
+                      fontSize={12}
+                      tickLine={false}
+                    />
+                    <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--card))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px',
+                      }}
+                      formatter={(value: number, name: string) => [
+                        name === 'valor' ? formatCurrency(value) : value,
+                        name === 'valor' ? 'Valor' : 'Propostas',
+                      ]}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="propostas"
+                      stroke="hsl(var(--primary))"
+                      strokeWidth={2}
+                      dot={{ fill: 'hsl(var(--primary))', r: 4 }}
+                      activeDot={{ r: 6 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Pie Chart - Status das Propostas */}
+        <Card className="shadow-card">
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold">Status das Propostas</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-[300px] w-full" />
+            ) : pieData.length === 0 ? (
+              <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                <div className="text-center">
+                  <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                  <p>Sem dados</p>
+                </div>
+              </div>
+            ) : (
+              <div className="h-[300px] relative">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={90}
+                      paddingAngle={2}
+                      dataKey="value"
+                    >
+                      {pieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--card))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px',
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                {/* Legend */}
+                <div className="absolute bottom-0 left-0 right-0 flex justify-center gap-4 text-xs">
+                  {pieData.map((item, index) => (
+                    <div key={index} className="flex items-center gap-1">
+                      <div
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: item.color }}
+                      />
+                      <span className="text-muted-foreground">
+                        {item.name} ({item.value})
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Second Charts Row */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Bar Chart - Valor por Período */}
+        <Card className="shadow-card">
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold">Valor por Período</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-[250px] w-full" />
+            ) : metrics.monthlyData.length === 0 ? (
+              <div className="h-[250px] flex items-center justify-center text-muted-foreground">
+                <div className="text-center">
+                  <DollarSign className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                  <p>Nenhum dado ainda</p>
+                </div>
+              </div>
+            ) : (
+              <div className="h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={metrics.monthlyData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis
+                      dataKey="month"
+                      stroke="hsl(var(--muted-foreground))"
+                      fontSize={12}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      stroke="hsl(var(--muted-foreground))"
+                      fontSize={12}
+                      tickLine={false}
+                      tickFormatter={(value) => formatCompactCurrency(value)}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--card))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px',
+                      }}
+                      formatter={(value: number) => [formatCurrency(value), 'Valor']}
+                    />
+                    <Bar dataKey="valor" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -190,30 +356,43 @@ export default function Dashboard() {
             <CardTitle className="text-lg font-semibold">Itens Mais Cotados</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={topItemsData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                  <YAxis
-                    dataKey="name"
-                    type="category"
-                    stroke="hsl(var(--muted-foreground))"
-                    fontSize={11}
-                    width={120}
-                    tickLine={false}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                    }}
-                  />
-                  <Bar dataKey="count" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            {isLoading ? (
+              <Skeleton className="h-[250px] w-full" />
+            ) : metrics.topItems.length === 0 ? (
+              <div className="h-[250px] flex items-center justify-center text-muted-foreground">
+                <div className="text-center">
+                  <Package className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                  <p>Nenhum item cotado ainda</p>
+                </div>
+              </div>
+            ) : (
+              <div className="h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={metrics.topItems} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                    <YAxis
+                      dataKey="name"
+                      type="category"
+                      stroke="hsl(var(--muted-foreground))"
+                      fontSize={11}
+                      width={120}
+                      tickLine={false}
+                      tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--card))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px',
+                      }}
+                      formatter={(value: number) => [value, 'Cotações']}
+                    />
+                    <Bar dataKey="count" fill="hsl(var(--chart-2))" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -230,7 +409,13 @@ export default function Dashboard() {
                   </div>
                   <div>
                     <p className="font-semibold">Gerenciar Itens</p>
-                    <p className="text-sm text-muted-foreground">23 itens cadastrados</p>
+                    <p className="text-sm text-muted-foreground">
+                      {isLoading ? (
+                        <Skeleton className="h-4 w-24 inline-block" />
+                      ) : (
+                        `${metrics.items.active} itens ativos`
+                      )}
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -246,7 +431,13 @@ export default function Dashboard() {
                   </div>
                   <div>
                     <p className="font-semibold">Gerenciar Usuários</p>
-                    <p className="text-sm text-muted-foreground">8 vendedores ativos</p>
+                    <p className="text-sm text-muted-foreground">
+                      {isLoading ? (
+                        <Skeleton className="h-4 w-24 inline-block" />
+                      ) : (
+                        `${metrics.users.active} usuários ativos`
+                      )}
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -262,7 +453,13 @@ export default function Dashboard() {
                   </div>
                   <div>
                     <p className="font-semibold">Templates</p>
-                    <p className="text-sm text-muted-foreground">1 template ativo</p>
+                    <p className="text-sm text-muted-foreground">
+                      {isLoading ? (
+                        <Skeleton className="h-4 w-24 inline-block" />
+                      ) : (
+                        `${metrics.templates.active} template${metrics.templates.active !== 1 ? 's' : ''} ativo${metrics.templates.active !== 1 ? 's' : ''}`
+                      )}
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -270,6 +467,51 @@ export default function Dashboard() {
           </Card>
         </div>
       )}
+
+      {/* Status Summary Cards */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="shadow-card border-l-4 border-l-muted-foreground">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <Clock className="w-5 h-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm text-muted-foreground">Rascunhos</p>
+                <p className="text-2xl font-bold">
+                  {isLoading ? <Skeleton className="h-7 w-10 inline-block" /> : metrics.proposals.byStatus.draft}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-card border-l-4 border-l-primary">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <Send className="w-5 h-5 text-primary" />
+              <div>
+                <p className="text-sm text-muted-foreground">Enviadas</p>
+                <p className="text-2xl font-bold">
+                  {isLoading ? <Skeleton className="h-7 w-10 inline-block" /> : metrics.proposals.byStatus.sent}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-card border-l-4 border-l-destructive">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-destructive" />
+              <div>
+                <p className="text-sm text-muted-foreground">Expiradas</p>
+                <p className="text-2xl font-bold">
+                  {isLoading ? <Skeleton className="h-7 w-10 inline-block" /> : metrics.proposals.byStatus.expired}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
