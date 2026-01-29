@@ -458,7 +458,7 @@ async function generatePdfWithPdfLib(data: ProposalData, htmlContent?: string): 
     borderWidth: 1,
   });
 
-  const validityText = `⏱️ Esta proposta é válida por ${proposal.validity_days} dias${proposal.expires_at ? ` (até ${formatDate(proposal.expires_at)})` : ''}`;
+  const validityText = `Validade: Esta proposta e valida por ${proposal.validity_days} dias${proposal.expires_at ? ` (ate ${formatDate(proposal.expires_at)})` : ''}`;
   const validityWidth = helveticaFont.widthOfTextAtSize(validityText, 10);
   drawText(validityText, margin + (contentWidth - validityWidth) / 2, yPosition - 12, {
     size: 10,
