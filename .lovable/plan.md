@@ -1,201 +1,113 @@
 
+## Plano: Corrigir Pré-visualização de PDF e Erro de Template
 
-## Plano: Lista Dinâmica de Itens no Template (3 linhas por produto)
+### Resumo dos Problemas
 
-### Resumo
-
-Vou implementar suporte a **loops dinâmicos** do Docxtemplater para que o template Word possa listar uma quantidade variável de itens, cada um com 3 linhas:
-1. **Nome do produto**
-2. **Descrição breve**
-3. **Valor**
+1. **Popup sem animação e bloqueada**: A janela de pré-visualização é aberta após operações assíncronas, causando bloqueio pelo navegador
+2. **Erro de template**: Seu arquivo `.docx` tem tags malformadas (ex: `{{{{data}}}}` ou `{ {data}}`)
 
 ---
 
-### O Problema Atual
+### Solução 1: Corrigir o Fluxo de Popup
 
-O sistema usa `{{tabela_itens}}` como um campo de texto simples, que insere todo o conteúdo como uma string única. Isso não permite:
-- Formatação individual de cada item
-- Layout personalizado no Word
-- Suporte dinâmico a N itens
-
----
-
-### A Solução: Sintaxe de Loop do Docxtemplater
-
-O Docxtemplater suporta uma sintaxe especial para loops sobre arrays:
-
-```text
-{#items}
-Nome: {nome}
-Descrição: {descricao}
-Valor: {valor}
-{/items}
+**Problema Técnico:**
+```javascript
+// Código atual em ViewProposal.tsx
+const handlePreviewPdf = () => {
+  if (proposal) {
+    previewPdf(proposal.id); // ← Abre popup DEPOIS de operações async = BLOQUEADO
+  }
+};
 ```
 
-Onde `items` é um array de objetos e `{nome}`, `{descricao}`, `{valor}` são campos de cada objeto.
-
----
-
-### Como o Template Word Deve Ficar
-
-No seu arquivo `.docx`, você vai usar esta estrutura:
-
-```text
-{#itens}
-{nome}
-{descricao}
-{valor}
-
-{/itens}
-
-Valor Total: {{valor_total}}
-```
-
-O Docxtemplater irá repetir automaticamente as 3 linhas para cada item da proposta.
-
----
-
-### Mudanças Técnicas
-
-#### 1. Edge Function (`supabase/functions/generate-pdf/index.ts`)
-
-**a) Buscar descrição do item original**
-
-Atualmente, `proposal_items` não tem descrição. Vou buscar a descrição da tabela `items` através do `item_id`:
-
-```sql
--- Query atualizada
-SELECT pi.*, i.description as item_description
-FROM proposal_items pi
-LEFT JOIN items i ON pi.item_id = i.id
-WHERE pi.proposal_id = ?
-```
-
-**b) Criar array `itens` para o loop**
+**Correção:**
+Usar o helper `openPdfPreviewWindow()` ANTES de qualquer operação assíncrona:
 
 ```javascript
-const itensArray = items.map((item, index) => ({
-  nome: item.item_name || '',
-  descricao: item.item_description || '',
-  valor: formatCurrency(Number(item.subtotal)),
-  // Campos extras opcionais
-  quantidade: item.quantity,
-  valor_unitario: formatCurrency(Number(item.item_price)),
-  desconto: Number(item.discount) > 0 ? `${item.discount}%` : '',
-  indice: index + 1,
-}));
-```
-
-**c) Atualizar `templateData`**
-
-```javascript
-const templateData = {
-  // ... campos existentes ...
-  itens: itensArray,  // Array para o loop
-  tabela_itens: generateItemsTable(items, totalValue),  // Fallback texto
+const handlePreviewPdf = () => {
+  if (!proposal) return;
+  // Abre a janela IMEDIATAMENTE no clique (antes de qualquer await)
+  const previewWindow = openPdfPreviewWindow();
+  // Passa a janela pré-aberta para previewPdf
+  previewPdf(proposal.id, previewWindow);
 };
 ```
 
 ---
 
-#### 2. Interface do Template (Atualizar documentação)
+### Solução 2: Corrigir o Erro de Template DOCX
 
-Atualizar a lista de campos dinâmicos em `src/pages/Templates.tsx` para incluir:
+O erro nos logs indica:
+```
+Duplicate open tag: "{{data"
+```
 
-| Campo | Descrição |
-|-------|-----------|
-| `{#itens}...{/itens}` | Loop para repetir bloco de itens |
-| `{nome}` | Nome do item (dentro do loop) |
-| `{descricao}` | Descrição breve do item (dentro do loop) |
-| `{valor}` | Valor/subtotal do item (dentro do loop) |
-| `{quantidade}` | Quantidade (dentro do loop) |
-| `{valor_unitario}` | Valor unitário (dentro do loop) |
-| `{desconto}` | Desconto aplicado (dentro do loop) |
-| `{indice}` | Número do item (1, 2, 3...) |
+**Causa:** O Word frequentemente "quebra" as tags quando você edita o texto. Por exemplo, ao digitar `{{cliente_nome}}`, o Word pode salvar internamente como:
+
+```xml
+<w:t>{{</w:t><w:t>cliente_nome}}</w:t>
+```
+
+Ou pior:
+```xml
+<w:t>{</w:t><w:t>{</w:t><w:t>cliente_nome</w:t><w:t>}</w:t><w:t>}</w:t>
+```
+
+**Como Corrigir no Template:**
+1. Abra seu arquivo `.docx` no Word
+2. Para cada placeholder, selecione o texto inteiro (ex: `{{cliente_nome}}`)
+3. Apague completamente
+4. Digite novamente de uma só vez (sem pausas)
+5. Salve e faça upload novamente
+
+**Alternativa - Usar campos simples:**
+- Em vez de `{{campo}}`, você pode usar apenas `{campo}` (chaves simples)
+- Isso pode ser configurado no código da edge function
 
 ---
 
-### Exemplo Prático
-
-**Dados da Proposta:**
-```json
-{
-  "itens": [
-    { "nome": "S50", "descricao": "Sistema de monitoramento marítimo", "valor": "R$ 59.000,00" },
-    { "nome": "GPS Pro", "descricao": "Navegador de alta precisão", "valor": "R$ 12.500,00" }
-  ]
-}
-```
-
-**Template Word:**
-```text
-PRODUTOS INCLUSOS:
-
-{#itens}
-• {nome}
-  {descricao}
-  Valor: {valor}
-
-{/itens}
-
-VALOR TOTAL: {{valor_total}}
-```
-
-**Resultado no PDF:**
-```text
-PRODUTOS INCLUSOS:
-
-• S50
-  Sistema de monitoramento marítimo
-  Valor: R$ 59.000,00
-
-• GPS Pro
-  Navegador de alta precisão
-  Valor: R$ 12.500,00
-
-VALOR TOTAL: R$ 71.500,00
-```
-
----
-
-### Correção do "undefined"
-
-Vou garantir que todos os campos tenham valores padrão (string vazia) quando não preenchidos:
-
-```javascript
-// Sanitização de todos os campos
-Object.keys(templateData).forEach(key => {
-  if (templateData[key] === undefined || templateData[key] === null) {
-    templateData[key] = '';
-  }
-});
-```
-
----
-
-### Arquivos a Serem Modificados
+### Arquivos a Modificar
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `supabase/functions/generate-pdf/index.ts` | Buscar descrição do item, criar array `itens` com campos formatados, sanitizar undefined |
-| `src/pages/Templates.tsx` | Adicionar documentação dos novos campos de loop |
+| `src/pages/ViewProposal.tsx` | Usar `openPdfPreviewWindow()` no `handlePreviewPdf` para evitar bloqueio de popup |
+| `supabase/functions/generate-pdf/index.ts` | (Opcional) Adicionar melhor tratamento de erros e log para facilitar diagnóstico |
+
+---
+
+### Mudança Detalhada em ViewProposal.tsx
+
+**Antes (linhas 126-130):**
+```javascript
+const handlePreviewPdf = () => {
+  if (proposal) {
+    previewPdf(proposal.id);
+  }
+};
+```
+
+**Depois:**
+```javascript
+const handlePreviewPdf = () => {
+  if (!proposal) return;
+  // Abrir janela IMEDIATAMENTE (antes de qualquer async)
+  const previewWindow = openPdfPreviewWindow();
+  // Passar a janela pré-aberta para o previewPdf
+  previewPdf(proposal.id, previewWindow);
+};
+```
+
+Também preciso atualizar a desestruturação do hook para incluir `openPdfPreviewWindow`:
+```javascript
+const { isGenerating, previewPdf, downloadPdf, generatePdf, openPdfPreviewWindow } = usePdfGeneration();
+```
 
 ---
 
 ### Próximos Passos do Usuário
 
-Após a implementação, você precisará atualizar seu template `.docx` para usar a nova sintaxe:
-
-1. Remover `{{tabela_itens}}`
-2. Adicionar o bloco de loop:
-   ```text
-   {#itens}
-   {nome}
-   {descricao}
-   {valor}
-   
-   {/itens}
-   ```
-3. Fazer upload do novo template
-4. Testar a geração do PDF
-
+Após a implementação:
+1. **Testar a pré-visualização** - A janela deve abrir imediatamente com "Gerando PDF..." e depois mostrar o PDF
+2. **Corrigir o template Word** - Redigitar os placeholders sem pausas
+3. **Re-fazer upload do template** - Após corrigir as tags
+4. **Testar novamente** - Verificar se o template personalizado está sendo usado (o log deve mostrar `custom template: true`)
