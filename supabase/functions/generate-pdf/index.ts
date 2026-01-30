@@ -95,113 +95,88 @@ function generateItemsTable(items: ProposalItem[], totalValue: number): string {
  * Fix fragmented template tags in Word XML.
  * Word often splits {{tag}} into separate XML runs like:
  * <w:r><w:t>{{</w:t></w:r><w:r><w:t>tag</w:t></w:r><w:r><w:t>}}</w:t></w:r>
- * This function merges adjacent text runs to reconstruct the tags properly.
+ * 
+ * This function uses a conservative approach: it extracts all text from a paragraph,
+ * checks if it contains valid template tags, and if so, consolidates the text into
+ * a single run while preserving the paragraph structure.
  */
 function fixFragmentedTags(xmlContent: string): string {
-  // Pattern to match a series of adjacent <w:r>...</w:r> elements
-  // We need to merge text content within <w:t> tags that form template delimiters
+  // Instead of aggressive XML manipulation, we'll work paragraph by paragraph
+  // and only fix paragraphs that contain fragmented template tags
   
-  // First, let's extract and merge all text within runs that might contain fragmented tags
-  // This regex finds sequences of <w:r>...<w:t>...</w:t>...</w:r> elements
+  // Split content into paragraphs
+  const paragraphPattern = /(<w:p\b[^>]*>)([\s\S]*?)(<\/w:p>)/g;
   
-  // Strategy: Find all text content, check for fragmented {{ or }}, and merge runs
-  
-  // Simple approach: Replace patterns where {{ or }} are split across runs
-  let fixed = xmlContent;
-  
-  // Pattern: <w:t>{{</w:t></w:r>...<w:r>...<w:t>something</w:t>
-  // We need to merge the text content while preserving the structure
-  
-  // More robust approach: Merge all <w:t> content within a paragraph that contains {{ or }}
-  // Then reconstruct with proper formatting
-  
-  // Simple fix: Remove intermediate run/text boundaries between {{ and }}
-  // Match: </w:t></w:r><w:r><w:t> or </w:t></w:r><w:r ...><w:t> patterns within potential tags
-  
-  // First, let's handle the most common case: split delimiters
-  // Pattern: text containing { followed by closing tags, then opening tags, then {
-  fixed = fixed.replace(
-    /\{(<\/w:t><\/w:r>(?:<w:r[^>]*>)?<w:r[^>]*><w:t[^>]*>)\{/g,
-    '{{$1'
-  );
-  fixed = fixed.replace(
-    /\}(<\/w:t><\/w:r>(?:<w:r[^>]*>)?<w:r[^>]*><w:t[^>]*>)\}/g,
-    '}}$1'
-  );
-  
-  // Now handle the case where the entire tag is split
-  // We need to merge text content between {{ and }}
-  
-  // More aggressive fix: merge all <w:t> content that appears to be part of a template tag
-  // This regex finds <w:t> tags and their content, then we process them
-  
-  // Alternative: Use a different approach - extract text, fix it, put it back
-  // This is safer and more reliable
-  
-  // Extract all text from <w:t> tags, concatenate them, then check for fragmented tags
-  const textPattern = /<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g;
-  const matches: { full: string; text: string; index: number }[] = [];
+  let result = xmlContent;
   let match;
+  const paragraphsToFix: { original: string; text: string; start: number }[] = [];
   
-  while ((match = textPattern.exec(xmlContent)) !== null) {
-    matches.push({
-      full: match[0],
-      text: match[1],
-      index: match.index
-    });
+  // First pass: identify paragraphs with fragmented tags
+  while ((match = paragraphPattern.exec(xmlContent)) !== null) {
+    const fullParagraph = match[0];
+    const paragraphContent = match[2];
+    
+    // Extract all text content from this paragraph
+    const textPattern = /<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g;
+    let textContent = '';
+    let textMatch;
+    
+    while ((textMatch = textPattern.exec(paragraphContent)) !== null) {
+      textContent += textMatch[1];
+    }
+    
+    // Check if this paragraph has what looks like a template tag
+    // that might be fragmented (contains {{ and }} but they're in different w:t elements)
+    const hasOpenBrace = /\{\{/.test(textContent);
+    const hasCloseBrace = /\}\}/.test(textContent);
+    const hasTagPattern = /\{\{[a-zA-Z_][a-zA-Z0-9_]*\}\}/.test(textContent);
+    const hasLoopPattern = /\{[#\/][a-zA-Z_][a-zA-Z0-9_]*\}/.test(textContent);
+    
+    // Check if the braces are split across different w:t elements
+    const singleRunHasCompleteTag = /<w:t[^>]*>[^<]*\{\{[a-zA-Z_][a-zA-Z0-9_]*\}\}[^<]*<\/w:t>/.test(paragraphContent);
+    
+    if ((hasOpenBrace && hasCloseBrace && !singleRunHasCompleteTag) || 
+        (hasTagPattern && !singleRunHasCompleteTag) ||
+        (hasLoopPattern)) {
+      paragraphsToFix.push({
+        original: fullParagraph,
+        text: textContent,
+        start: match.index
+      });
+    }
   }
   
-  // Check if concatenated text would reveal fragmented tags
-  // If we have adjacent matches that together form {{...}}
-  // For now, let's use a simpler approach that works for most cases
-  
-  // Most reliable fix: merge all w:t content within the same w:p (paragraph)
-  // by removing the intermediate XML tags, then wrapping in a single w:r/w:t
-  
-  // Actually, the cleanest solution is to use a regex that matches the pattern of
-  // fragmented tags and fixes them specifically
-  
-  // Pattern: {{text split across multiple runs}}
-  // We look for: <w:t>{</w:t> or <w:t>{{</w:t> followed eventually by <w:t>}}</w:t> or <w:t>}</w:t>
-  // and merge all the w:t content in between
-  
-  // Simpler approach that handles most cases:
-  // Remove </w:t></w:r><w:r><w:t> and </w:t></w:r><w:r ...><w:t> patterns
-  // only within the context of template tags
-  
-  // First, identify regions that look like fragmented template tags
-  // A fragmented tag would have {{ in one place and }} in another with XML in between
-  
-  // Most practical fix: just merge adjacent text runs unconditionally
-  // This preserves the content while fixing the fragmentation
-  
-  // Pattern to merge: </w:t></w:r><w:r><w:t> (with optional attributes)
-  const mergePattern = /<\/w:t><\/w:r><w:r(?:\s[^>]*)?><w:t(?:\s[^>]*)?>/g;
-  
-  // Before merging, let's be more selective - only merge when we detect potential tag fragments
-  // Check if the content has fragmented delimiters
-  const hasFragmentedTags = 
-    /\{\{[^}]*<\/w:t>/.test(xmlContent) || // {{ followed by closing tag before }}
-    /<w:t[^>]*>\s*\{[^{]/.test(xmlContent) || // single { at start of w:t
-    /[^}]\}\s*<\/w:t>/.test(xmlContent); // single } before closing w:t
-  
-  if (hasFragmentedTags) {
-    console.log('Detected fragmented template tags, attempting to fix...');
+  // Second pass: fix the identified paragraphs by consolidating text
+  if (paragraphsToFix.length > 0) {
+    console.log(`Found ${paragraphsToFix.length} paragraphs with potentially fragmented tags`);
     
-    // Merge adjacent text runs to fix fragmentation
-    fixed = xmlContent.replace(mergePattern, '');
-    
-    // Also handle cases where there are formatting runs in between
-    // Pattern: </w:t></w:r><w:r><w:rPr>...</w:rPr><w:t>
-    fixed = fixed.replace(/<\/w:t><\/w:r><w:r(?:\s[^>]*)?><w:rPr>[^<]*(?:<[^>]+>[^<]*)*<\/w:rPr><w:t(?:\s[^>]*)?>/g, '');
-    
-    // Handle xml:space="preserve" attributes
-    fixed = fixed.replace(/<\/w:t><\/w:r><w:r><w:t xml:space="preserve">/g, '');
-    
-    console.log('Tag fragmentation fix applied');
+    for (const para of paragraphsToFix) {
+      // Extract paragraph properties if they exist
+      const pPrMatch = para.original.match(/<w:pPr>[\s\S]*?<\/w:pPr>/);
+      const pPr = pPrMatch ? pPrMatch[0] : '';
+      
+      // Extract any run properties from the first run (to preserve formatting)
+      const rPrMatch = para.original.match(/<w:rPr>[\s\S]*?<\/w:rPr>/);
+      const rPr = rPrMatch ? rPrMatch[0] : '';
+      
+      // Get opening and closing paragraph tags
+      const openTag = para.original.match(/^<w:p\b[^>]*>/)?.[0] || '<w:p>';
+      
+      // Reconstruct the paragraph with a single text run
+      // Escape XML special characters in text (but preserve template braces)
+      const escapedText = para.text
+        .replace(/&(?!amp;|lt;|gt;|quot;|apos;)/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      
+      const newParagraph = `${openTag}${pPr}<w:r>${rPr}<w:t xml:space="preserve">${escapedText}</w:t></w:r></w:p>`;
+      
+      result = result.replace(para.original, newParagraph);
+      console.log(`Fixed paragraph with text: "${para.text.substring(0, 50)}..."`);
+    }
   }
   
-  return fixed;
+  return result;
 }
 
 // Process .docx template with dynamic field substitution
