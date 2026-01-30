@@ -30,6 +30,7 @@ interface ProposalData {
     client_whatsapp?: string;
     client_company?: string;
     client_address?: string;
+    client_cnpj?: string;
     payment_conditions?: string;
     validity_days: number;
     created_at: string;
@@ -119,6 +120,7 @@ async function processDocxTemplate(
     cliente_whatsapp: proposal.client_whatsapp || '',
     cliente_empresa: proposal.client_company || '',
     cliente_endereco: proposal.client_address || '',
+    cliente_cnpj: proposal.client_cnpj || '',
     data: formatDate(proposal.created_at),
     data_extenso: formatDateExtended(),
     numero_proposta: proposal.proposal_number || '',
