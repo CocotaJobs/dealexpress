@@ -281,6 +281,7 @@ export type Database = {
       proposals: {
         Row: {
           client_address: string | null
+          client_cnpj: string | null
           client_company: string | null
           client_email: string | null
           client_name: string
@@ -300,6 +301,7 @@ export type Database = {
         }
         Insert: {
           client_address?: string | null
+          client_cnpj?: string | null
           client_company?: string | null
           client_email?: string | null
           client_name: string
@@ -319,6 +321,7 @@ export type Database = {
         }
         Update: {
           client_address?: string | null
+          client_cnpj?: string | null
           client_company?: string | null
           client_email?: string | null
           client_name?: string
