@@ -51,7 +51,7 @@ export default function ViewProposal() {
   const { toast } = useToast();
   const { profile } = useAuth();
   const { sendProposal, duplicateProposal } = useProposals();
-  const { isGenerating, previewPdf, downloadPdf, generatePdf } = usePdfGeneration();
+  const { isGenerating, previewPdf, downloadPdf, generatePdf, openPdfPreviewWindow } = usePdfGeneration();
 
   const [proposal, setProposal] = useState<ProposalWithItems | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -124,9 +124,10 @@ export default function ViewProposal() {
   };
 
   const handlePreviewPdf = () => {
-    if (proposal) {
-      previewPdf(proposal.id);
-    }
+    if (!proposal) return;
+    // Open window IMMEDIATELY on click (before any async operation)
+    const previewWindow = openPdfPreviewWindow();
+    previewPdf(proposal.id, previewWindow);
   };
 
   const handleDownloadPdf = () => {
