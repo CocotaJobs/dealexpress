@@ -91,6 +91,119 @@ function generateItemsTable(items: ProposalItem[], totalValue: number): string {
   return table;
 }
 
+/**
+ * Fix fragmented template tags in Word XML.
+ * Word often splits {{tag}} into separate XML runs like:
+ * <w:r><w:t>{{</w:t></w:r><w:r><w:t>tag</w:t></w:r><w:r><w:t>}}</w:t></w:r>
+ * This function merges adjacent text runs to reconstruct the tags properly.
+ */
+function fixFragmentedTags(xmlContent: string): string {
+  // Pattern to match a series of adjacent <w:r>...</w:r> elements
+  // We need to merge text content within <w:t> tags that form template delimiters
+  
+  // First, let's extract and merge all text within runs that might contain fragmented tags
+  // This regex finds sequences of <w:r>...<w:t>...</w:t>...</w:r> elements
+  
+  // Strategy: Find all text content, check for fragmented {{ or }}, and merge runs
+  
+  // Simple approach: Replace patterns where {{ or }} are split across runs
+  let fixed = xmlContent;
+  
+  // Pattern: <w:t>{{</w:t></w:r>...<w:r>...<w:t>something</w:t>
+  // We need to merge the text content while preserving the structure
+  
+  // More robust approach: Merge all <w:t> content within a paragraph that contains {{ or }}
+  // Then reconstruct with proper formatting
+  
+  // Simple fix: Remove intermediate run/text boundaries between {{ and }}
+  // Match: </w:t></w:r><w:r><w:t> or </w:t></w:r><w:r ...><w:t> patterns within potential tags
+  
+  // First, let's handle the most common case: split delimiters
+  // Pattern: text containing { followed by closing tags, then opening tags, then {
+  fixed = fixed.replace(
+    /\{(<\/w:t><\/w:r>(?:<w:r[^>]*>)?<w:r[^>]*><w:t[^>]*>)\{/g,
+    '{{$1'
+  );
+  fixed = fixed.replace(
+    /\}(<\/w:t><\/w:r>(?:<w:r[^>]*>)?<w:r[^>]*><w:t[^>]*>)\}/g,
+    '}}$1'
+  );
+  
+  // Now handle the case where the entire tag is split
+  // We need to merge text content between {{ and }}
+  
+  // More aggressive fix: merge all <w:t> content that appears to be part of a template tag
+  // This regex finds <w:t> tags and their content, then we process them
+  
+  // Alternative: Use a different approach - extract text, fix it, put it back
+  // This is safer and more reliable
+  
+  // Extract all text from <w:t> tags, concatenate them, then check for fragmented tags
+  const textPattern = /<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g;
+  const matches: { full: string; text: string; index: number }[] = [];
+  let match;
+  
+  while ((match = textPattern.exec(xmlContent)) !== null) {
+    matches.push({
+      full: match[0],
+      text: match[1],
+      index: match.index
+    });
+  }
+  
+  // Check if concatenated text would reveal fragmented tags
+  // If we have adjacent matches that together form {{...}}
+  // For now, let's use a simpler approach that works for most cases
+  
+  // Most reliable fix: merge all w:t content within the same w:p (paragraph)
+  // by removing the intermediate XML tags, then wrapping in a single w:r/w:t
+  
+  // Actually, the cleanest solution is to use a regex that matches the pattern of
+  // fragmented tags and fixes them specifically
+  
+  // Pattern: {{text split across multiple runs}}
+  // We look for: <w:t>{</w:t> or <w:t>{{</w:t> followed eventually by <w:t>}}</w:t> or <w:t>}</w:t>
+  // and merge all the w:t content in between
+  
+  // Simpler approach that handles most cases:
+  // Remove </w:t></w:r><w:r><w:t> and </w:t></w:r><w:r ...><w:t> patterns
+  // only within the context of template tags
+  
+  // First, identify regions that look like fragmented template tags
+  // A fragmented tag would have {{ in one place and }} in another with XML in between
+  
+  // Most practical fix: just merge adjacent text runs unconditionally
+  // This preserves the content while fixing the fragmentation
+  
+  // Pattern to merge: </w:t></w:r><w:r><w:t> (with optional attributes)
+  const mergePattern = /<\/w:t><\/w:r><w:r(?:\s[^>]*)?><w:t(?:\s[^>]*)?>/g;
+  
+  // Before merging, let's be more selective - only merge when we detect potential tag fragments
+  // Check if the content has fragmented delimiters
+  const hasFragmentedTags = 
+    /\{\{[^}]*<\/w:t>/.test(xmlContent) || // {{ followed by closing tag before }}
+    /<w:t[^>]*>\s*\{[^{]/.test(xmlContent) || // single { at start of w:t
+    /[^}]\}\s*<\/w:t>/.test(xmlContent); // single } before closing w:t
+  
+  if (hasFragmentedTags) {
+    console.log('Detected fragmented template tags, attempting to fix...');
+    
+    // Merge adjacent text runs to fix fragmentation
+    fixed = xmlContent.replace(mergePattern, '');
+    
+    // Also handle cases where there are formatting runs in between
+    // Pattern: </w:t></w:r><w:r><w:rPr>...</w:rPr><w:t>
+    fixed = fixed.replace(/<\/w:t><\/w:r><w:r(?:\s[^>]*)?><w:rPr>[^<]*(?:<[^>]+>[^<]*)*<\/w:rPr><w:t(?:\s[^>]*)?>/g, '');
+    
+    // Handle xml:space="preserve" attributes
+    fixed = fixed.replace(/<\/w:t><\/w:r><w:r><w:t xml:space="preserve">/g, '');
+    
+    console.log('Tag fragmentation fix applied');
+  }
+  
+  return fixed;
+}
+
 // Process .docx template with dynamic field substitution
 async function processDocxTemplate(
   templateBuffer: ArrayBuffer,
@@ -149,6 +262,28 @@ async function processDocxTemplate(
   try {
     // Load the docx as a zip
     const zip = new PizZip(templateBuffer);
+    
+    // Fix fragmented template tags in document.xml before processing
+    const documentXml = zip.file('word/document.xml');
+    if (documentXml) {
+      const originalContent = documentXml.asText();
+      const fixedContent = fixFragmentedTags(originalContent);
+      zip.file('word/document.xml', fixedContent);
+      console.log('Document XML preprocessed for fragmented tags');
+    }
+    
+    // Also fix header and footer files if they exist
+    const headerFiles = Object.keys(zip.files).filter(name => name.match(/word\/header\d*\.xml/));
+    const footerFiles = Object.keys(zip.files).filter(name => name.match(/word\/footer\d*\.xml/));
+    
+    for (const fileName of [...headerFiles, ...footerFiles]) {
+      const file = zip.file(fileName);
+      if (file) {
+        const content = file.asText();
+        const fixed = fixFragmentedTags(content);
+        zip.file(fileName, fixed);
+      }
+    }
     
     // Create docxtemplater instance with both delimiters for flexibility
     const doc = new Docxtemplater(zip, {
