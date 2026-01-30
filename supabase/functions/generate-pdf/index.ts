@@ -92,12 +92,7 @@ function generateItemsTable(items: ProposalItem[], totalValue: number): string {
 }
 
 /**
- * Fix fragmented template tags in Word XML.
- * Word often splits {{tag}} into separate XML runs like:
- * <w:r><w:t>{{</w:t></w:r><w:r><w:t>tag</w:t></w:r><w:r><w:t>}}</w:t></w:r>
- * 
- * This function merges adjacent w:r elements within paragraphs that contain
- * template delimiters, consolidating the text content.
+ * Sanitize XML string to remove invalid characters and fix entities.
  */
 function sanitizeXmlString(input: string): { value: string; changed: boolean } {
   let value = input;
@@ -141,65 +136,61 @@ function isWellFormedXml(xml: string): boolean {
 }
 
 /**
- * Fix fragmented template tags in Word XML.
- * Conservative strategy (prevents "Malformed xml"):
- * - Never rebuild <w:p> or <w:r> structure.
- * - Only consolidates text across multiple <w:t> nodes within the same paragraph
- *   when docxtemplater delimiters are fragmented across runs.
+ * Merge all text runs within paragraphs that contain template delimiters.
+ * This consolidates fragmented tags like:
+ * <w:r><w:t>{</w:t></w:r><w:r><w:t>data</w:t></w:r><w:r><w:t>}</w:t></w:r>
+ * Into a single run: <w:r><w:t xml:space="preserve">{data}</w:t></w:r>
+ * 
+ * This approach is more robust than trying to fix individual tags because:
+ * 1. It handles any level of fragmentation
+ * 2. It preserves paragraph properties
+ * 3. It works with single-character delimiters (less prone to Word fragmentation)
  */
-function fixFragmentedTags(xmlContent: string): string {
-  console.log('Starting fixFragmentedTags (conservative mode)...');
-
-  let result = xmlContent;
-  const paragraphRegex = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
-  const paragraphs = xmlContent.match(paragraphRegex) || [];
-  console.log(`Found ${paragraphs.length} paragraphs to check`);
-
+function mergeRunsInParagraph(xmlContent: string): string {
+  console.log('Starting mergeRunsInParagraph preprocessing...');
+  
   let fixedCount = 0;
-
-  for (const paragraph of paragraphs) {
-    const wtMatches = Array.from(paragraph.matchAll(/<w:t([^>]*)>([\s\S]*?)<\/w:t>/g));
-    if (wtMatches.length < 2) continue;
-
-    const texts = wtMatches.map((m) => m[2] ?? '');
-    const fullText = texts.join('');
-
-    const containsTemplate = /(\{\{|\}\}|\{#|\{\/)/.test(fullText);
-    if (!containsTemplate) continue;
-
-    const anyRunHasDelimiters = texts.some((t) => /(\{\{|\}\}|\{#|\{\/)/.test(t));
-    const hasScatteredBraces = texts.some((t) => /[{}]/.test(t));
-    const isLikelyFragmented = !anyRunHasDelimiters && hasScatteredBraces;
-    if (!isLikelyFragmented) continue;
-
-    console.log(`Fixing paragraph (conservative) with template text: "${fullText.substring(0, 80)}..."`);
-    fixedCount++;
-
-    let rebuilt = '';
-    let lastIndex = 0;
-
-    wtMatches.forEach((m, idx) => {
-      const matchIndex = m.index ?? -1;
-      if (matchIndex < 0) return;
-
-      const fullMatch = m[0];
-      const attrs = m[1] ?? '';
-      const endIndex = matchIndex + fullMatch.length;
-
-      rebuilt += paragraph.slice(lastIndex, matchIndex);
-      if (idx === 0) {
-        rebuilt += `<w:t${attrs}>${fullText}</w:t>`;
-      } else {
-        rebuilt += `<w:t${attrs}></w:t>`;
+  
+  // Process each paragraph individually
+  const result = xmlContent.replace(
+    /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g,
+    (paragraph) => {
+      // Quick check: if no braces at all, skip this paragraph
+      if (!paragraph.includes('{') && !paragraph.includes('}')) {
+        return paragraph;
       }
-      lastIndex = endIndex;
-    });
-
-    rebuilt += paragraph.slice(lastIndex);
-    result = result.replace(paragraph, rebuilt);
-  }
-
-  console.log(`Fixed ${fixedCount} paragraphs with fragmented template tags (conservative mode)`);
+      
+      // Extract all text from <w:t> elements
+      const textMatches = [...paragraph.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)];
+      if (textMatches.length <= 1) {
+        return paragraph; // Already consolidated or only one text node
+      }
+      
+      // Combine all text content
+      const fullText = textMatches.map(m => m[1]).join('');
+      
+      // If the combined text doesn't contain template delimiters, no need to modify
+      if (!fullText.includes('{') && !fullText.includes('}')) {
+        return paragraph;
+      }
+      
+      console.log(`Merging paragraph with template text: "${fullText.substring(0, 60)}..."`);
+      fixedCount++;
+      
+      // Preserve paragraph properties if they exist
+      const pPrMatch = paragraph.match(/<w:pPr>[\s\S]*?<\/w:pPr>/);
+      const pPr = pPrMatch ? pPrMatch[0] : '';
+      
+      // Extract paragraph opening tag (may have attributes)
+      const pOpenMatch = paragraph.match(/^<w:p\b[^>]*>/);
+      const pOpen = pOpenMatch ? pOpenMatch[0] : '<w:p>';
+      
+      // Reconstruct the paragraph with a single run containing all text
+      return `${pOpen}${pPr}<w:r><w:t xml:space="preserve">${fullText}</w:t></w:r></w:p>`;
+    }
+  );
+  
+  console.log(`Merged ${fixedCount} paragraphs with template delimiters`);
   return result;
 }
 
@@ -296,22 +287,24 @@ async function processDocxTemplate(
       );
     }
     
-    // Fix fragmented template tags (conservative) now that XML is known to be well-formed
+    // Merge runs in paragraphs that contain template delimiters
     for (const fileName of xmlFilesToCheck) {
       const file = zip.file(fileName);
       if (!file) continue;
       const content = file.asText();
-      const fixed = fixFragmentedTags(content);
-      if (fixed !== content) {
-        zip.file(fileName, fixed);
-        console.log(`Template tags normalized in ${fileName}`);
+      const merged = mergeRunsInParagraph(content);
+      if (merged !== content) {
+        zip.file(fileName, merged);
+        console.log(`Runs merged in ${fileName}`);
       }
     }
     
-    // Create docxtemplater instance with both delimiters for flexibility
+    // Create docxtemplater instance with single-character delimiters
+    // Single braces are much less likely to be fragmented by Word
     const doc = new Docxtemplater(zip, {
       paragraphLoop: true,
       linebreaks: true,
+      delimiters: { start: '{', end: '}' },
     });
 
     // Render the document with data
