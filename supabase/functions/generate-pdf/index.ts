@@ -99,16 +99,108 @@ function generateItemsTable(items: ProposalItem[], totalValue: number): string {
  * This function merges adjacent w:r elements within paragraphs that contain
  * template delimiters, consolidating the text content.
  */
+function sanitizeXmlString(input: string): { value: string; changed: boolean } {
+  let value = input;
+  let changed = false;
+
+  // Remove invalid XML 1.0 chars (keep tab, LF, CR)
+  const cleaned = value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+  if (cleaned !== value) {
+    value = cleaned;
+    changed = true;
+  }
+
+  // Fix bare ampersands that aren't entities
+  const fixedAmp = value.replace(
+    /&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;)/g,
+    '&amp;'
+  );
+  if (fixedAmp !== value) {
+    value = fixedAmp;
+    changed = true;
+  }
+
+  return { value, changed };
+}
+
+function isWellFormedXml(xml: string): boolean {
+  try {
+    const DP = (globalThis as unknown as { DOMParser?: unknown }).DOMParser as
+      | (new () => { parseFromString: (s: string, type: string) => { getElementsByTagName: (t: string) => { length: number } } })
+      | undefined;
+
+    // If DOMParser isn't available in this runtime, we can't validate here.
+    // In that case, just assume it's ok and let docxtemplater throw if needed.
+    if (!DP) return true;
+
+    const doc = new DP().parseFromString(xml, 'application/xml');
+    return doc.getElementsByTagName('parsererror').length === 0;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Previously attempted to fix fragmented template tags, but this was corrupting XML.
- * Now we simply return the content as-is and let Docxtemplater handle it.
- * If there are issues, the error message will guide the user to fix the template manually.
+ * Fix fragmented template tags in Word XML.
+ * Conservative strategy (prevents "Malformed xml"):
+ * - Never rebuild <w:p> or <w:r> structure.
+ * - Only consolidates text across multiple <w:t> nodes within the same paragraph
+ *   when docxtemplater delimiters are fragmented across runs.
  */
 function fixFragmentedTags(xmlContent: string): string {
-  // DISABLED: XML manipulation was causing "Malformed xml" errors
-  // Simply return original content without modification
-  console.log('fixFragmentedTags: Skipping (disabled to prevent XML corruption)');
-  return xmlContent;
+  console.log('Starting fixFragmentedTags (conservative mode)...');
+
+  let result = xmlContent;
+  const paragraphRegex = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
+  const paragraphs = xmlContent.match(paragraphRegex) || [];
+  console.log(`Found ${paragraphs.length} paragraphs to check`);
+
+  let fixedCount = 0;
+
+  for (const paragraph of paragraphs) {
+    const wtMatches = Array.from(paragraph.matchAll(/<w:t([^>]*)>([\s\S]*?)<\/w:t>/g));
+    if (wtMatches.length < 2) continue;
+
+    const texts = wtMatches.map((m) => m[2] ?? '');
+    const fullText = texts.join('');
+
+    const containsTemplate = /(\{\{|\}\}|\{#|\{\/)/.test(fullText);
+    if (!containsTemplate) continue;
+
+    const anyRunHasDelimiters = texts.some((t) => /(\{\{|\}\}|\{#|\{\/)/.test(t));
+    const hasScatteredBraces = texts.some((t) => /[{}]/.test(t));
+    const isLikelyFragmented = !anyRunHasDelimiters && hasScatteredBraces;
+    if (!isLikelyFragmented) continue;
+
+    console.log(`Fixing paragraph (conservative) with template text: "${fullText.substring(0, 80)}..."`);
+    fixedCount++;
+
+    let rebuilt = '';
+    let lastIndex = 0;
+
+    wtMatches.forEach((m, idx) => {
+      const matchIndex = m.index ?? -1;
+      if (matchIndex < 0) return;
+
+      const fullMatch = m[0];
+      const attrs = m[1] ?? '';
+      const endIndex = matchIndex + fullMatch.length;
+
+      rebuilt += paragraph.slice(lastIndex, matchIndex);
+      if (idx === 0) {
+        rebuilt += `<w:t${attrs}>${fullText}</w:t>`;
+      } else {
+        rebuilt += `<w:t${attrs}></w:t>`;
+      }
+      lastIndex = endIndex;
+    });
+
+    rebuilt += paragraph.slice(lastIndex);
+    result = result.replace(paragraph, rebuilt);
+  }
+
+  console.log(`Fixed ${fixedCount} paragraphs with fragmented template tags (conservative mode)`);
+  return result;
 }
 
 // Process .docx template with dynamic field substitution
@@ -169,26 +261,50 @@ async function processDocxTemplate(
   try {
     // Load the docx as a zip
     const zip = new PizZip(templateBuffer);
-    
-    // Fix fragmented template tags in document.xml before processing
-    const documentXml = zip.file('word/document.xml');
-    if (documentXml) {
-      const originalContent = documentXml.asText();
-      const fixedContent = fixFragmentedTags(originalContent);
-      zip.file('word/document.xml', fixedContent);
-      console.log('Document XML preprocessed for fragmented tags');
+
+    // Validate/repair XML files BEFORE touching docxtemplater.
+    // Malformed XML can come from the source .docx itself (not only template tags).
+    const xmlFilesToCheck = [
+      'word/document.xml',
+      ...Object.keys(zip.files).filter(name => name.match(/word\/header\d*\.xml/)),
+      ...Object.keys(zip.files).filter(name => name.match(/word\/footer\d*\.xml/)),
+    ];
+
+    const malformedXmlFiles: string[] = [];
+
+    for (const fileName of xmlFilesToCheck) {
+      const file = zip.file(fileName);
+      if (!file) continue;
+
+      const original = file.asText();
+      if (isWellFormedXml(original)) continue;
+
+      const { value: sanitized, changed } = sanitizeXmlString(original);
+      if (changed && isWellFormedXml(sanitized)) {
+        zip.file(fileName, sanitized);
+        console.log(`Repaired malformed XML in ${fileName} (sanitized characters/entities)`);
+      } else {
+        malformedXmlFiles.push(fileName);
+      }
+    }
+
+    if (malformedXmlFiles.length > 0) {
+      // Fail early with actionable detail (Docxtemplater error doesn't say which XML file is broken)
+      throw new Error(
+        `Template .docx contém XML malformado em: ${malformedXmlFiles.join(', ')}. ` +
+          `Dica: Abra o template no Word e use "Salvar como" (novo .docx) ou copie o conteúdo para um documento novo e salve novamente.`
+      );
     }
     
-    // Also fix header and footer files if they exist
-    const headerFiles = Object.keys(zip.files).filter(name => name.match(/word\/header\d*\.xml/));
-    const footerFiles = Object.keys(zip.files).filter(name => name.match(/word\/footer\d*\.xml/));
-    
-    for (const fileName of [...headerFiles, ...footerFiles]) {
+    // Fix fragmented template tags (conservative) now that XML is known to be well-formed
+    for (const fileName of xmlFilesToCheck) {
       const file = zip.file(fileName);
-      if (file) {
-        const content = file.asText();
-        const fixed = fixFragmentedTags(content);
+      if (!file) continue;
+      const content = file.asText();
+      const fixed = fixFragmentedTags(content);
+      if (fixed !== content) {
         zip.file(fileName, fixed);
+        console.log(`Template tags normalized in ${fileName}`);
       }
     }
     
