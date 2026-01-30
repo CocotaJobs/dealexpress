@@ -99,86 +99,16 @@ function generateItemsTable(items: ProposalItem[], totalValue: number): string {
  * This function merges adjacent w:r elements within paragraphs that contain
  * template delimiters, consolidating the text content.
  */
+/**
+ * Previously attempted to fix fragmented template tags, but this was corrupting XML.
+ * Now we simply return the content as-is and let Docxtemplater handle it.
+ * If there are issues, the error message will guide the user to fix the template manually.
+ */
 function fixFragmentedTags(xmlContent: string): string {
-  console.log('Starting fixFragmentedTags...');
-  
-  // More robust approach: find all text content and merge runs in paragraphs with template syntax
-  let result = xmlContent;
-  
-  // Process each paragraph
-  const paragraphRegex = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
-  const paragraphs = xmlContent.match(paragraphRegex) || [];
-  
-  console.log(`Found ${paragraphs.length} paragraphs to check`);
-  
-  let fixedCount = 0;
-  
-  for (const paragraph of paragraphs) {
-    // Extract ALL text from w:t elements in this paragraph
-    // Use a more permissive pattern that handles XML entities
-    const textMatches = paragraph.match(/<w:t[^>]*>([^]*?)<\/w:t>/g) || [];
-    
-    let fullText = '';
-    for (const tm of textMatches) {
-      // Extract content between <w:t...> and </w:t>
-      const content = tm.replace(/<w:t[^>]*>/, '').replace(/<\/w:t>/, '');
-      fullText += content;
-    }
-    
-    // Check if this paragraph contains template delimiters that might be split
-    const hasTemplateDelimiters = fullText.includes('{') && fullText.includes('}');
-    
-    if (!hasTemplateDelimiters) {
-      continue;
-    }
-    
-    // Check if delimiters are already complete within single w:t tags
-    const hasSplitDelimiters = 
-      (fullText.includes('{{') && !paragraph.includes('{{')) || // {{ exists in text but not as literal in XML
-      (fullText.includes('}}') && !paragraph.includes('}}')) ||
-      // Or check for single braces that should be doubled
-      /<w:t[^>]*>\s*\{[^{]/.test(paragraph) || // { not followed by {
-      /[^}]\}\s*<\/w:t>/.test(paragraph); // } not preceded by }
-    
-    if (!hasSplitDelimiters) {
-      // Also check for tags split across runs
-      // If we have {{ or }} in fullText but individual w:t elements only have partial
-      const partialBraces = textMatches.some(tm => {
-        const content = tm.replace(/<w:t[^>]*>/, '').replace(/<\/w:t>/, '');
-        return (content.includes('{') && !content.includes('{{') && fullText.includes('{{')) ||
-               (content.includes('}') && !content.includes('}}') && fullText.includes('}}'));
-      });
-      
-      if (!partialBraces) {
-        continue;
-      }
-    }
-    
-    console.log(`Fixing paragraph with template text: "${fullText.substring(0, 80)}..."`);
-    fixedCount++;
-    
-    // Extract paragraph properties
-    const pPrMatch = paragraph.match(/<w:pPr>[\s\S]*?<\/w:pPr>/);
-    const pPr = pPrMatch ? pPrMatch[0] : '';
-    
-    // Extract run properties from the first run (to preserve basic formatting)
-    const rPrMatch = paragraph.match(/<w:rPr>[\s\S]*?<\/w:rPr>/);
-    const rPr = rPrMatch ? rPrMatch[0] : '';
-    
-    // Get the opening paragraph tag (preserving any attributes)
-    const openTagMatch = paragraph.match(/^<w:p\b[^>]*>/);
-    const openTag = openTagMatch ? openTagMatch[0] : '<w:p>';
-    
-    // Build new paragraph with consolidated text
-    // Keep the text as-is since it's already XML-encoded from the original
-    const newParagraph = `${openTag}${pPr}<w:r>${rPr}<w:t xml:space="preserve">${fullText}</w:t></w:r></w:p>`;
-    
-    result = result.replace(paragraph, newParagraph);
-  }
-  
-  console.log(`Fixed ${fixedCount} paragraphs with fragmented template tags`);
-  
-  return result;
+  // DISABLED: XML manipulation was causing "Malformed xml" errors
+  // Simply return original content without modification
+  console.log('fixFragmentedTags: Skipping (disabled to prevent XML corruption)');
+  return xmlContent;
 }
 
 // Process .docx template with dynamic field substitution
