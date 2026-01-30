@@ -27,10 +27,21 @@ const dynamicFields = [
   { field: '{{data_extenso}}', description: 'Data atual por extenso (ex: 29 de Janeiro de 2026)' },
   { field: '{{numero_proposta}}', description: 'Número único da proposta' },
   { field: '{{vendedor_nome}}', description: 'Nome do vendedor' },
-  { field: '{{tabela_itens}}', description: 'Tabela com itens da proposta' },
+  { field: '{{tabela_itens}}', description: 'Tabela com itens (texto simples)' },
   { field: '{{valor_total}}', description: 'Valor total da proposta' },
   { field: '{{condicoes_pagamento}}', description: 'Condições de pagamento' },
   { field: '{{validade_proposta}}', description: 'Data de validade' },
+];
+
+const loopFields = [
+  { field: '{#itens}...{/itens}', description: 'Loop para repetir bloco para cada item' },
+  { field: '{nome}', description: 'Nome do item (dentro do loop)' },
+  { field: '{descricao}', description: 'Descrição breve do item (dentro do loop)' },
+  { field: '{valor}', description: 'Valor/subtotal do item (dentro do loop)' },
+  { field: '{quantidade}', description: 'Quantidade do item (dentro do loop)' },
+  { field: '{valor_unitario}', description: 'Valor unitário (dentro do loop)' },
+  { field: '{desconto}', description: 'Desconto aplicado (dentro do loop)' },
+  { field: '{indice}', description: 'Número do item 1, 2, 3... (dentro do loop)' },
 ];
 
 export default function Templates() {
@@ -350,12 +361,47 @@ export default function Templates() {
                 </div>
               ))}
             </div>
-            <div className="mt-6 p-4 bg-info/10 border border-info/20 rounded-lg">
+
+            {/* Loop Fields Section */}
+            <div className="mt-6 pt-6 border-t border-border">
+              <h4 className="font-medium mb-3 flex items-center gap-2 text-primary">
+                Campos de Loop (Itens Dinâmicos)
+              </h4>
+              <div className="space-y-2">
+                {loopFields.map((field) => (
+                  <div
+                    key={field.field}
+                    className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors"
+                  >
+                    <code className="px-2 py-1 bg-success/10 text-success rounded text-sm font-mono whitespace-nowrap">
+                      {field.field}
+                    </code>
+                    <span className="text-sm text-muted-foreground">{field.description}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Example */}
+            <div className="mt-6 p-4 bg-muted/50 border border-border rounded-lg">
+              <p className="text-sm font-medium mb-2">Exemplo de uso no template:</p>
+              <pre className="text-xs bg-background p-3 rounded border overflow-x-auto">
+{`{#itens}
+• {nome}
+  {descricao}
+  Valor: {valor}
+
+{/itens}
+
+Valor Total: {valor_total}`}
+              </pre>
+            </div>
+
+            <div className="mt-4 p-4 bg-info/10 border border-info/20 rounded-lg">
               <p className="text-sm font-medium text-info">Dica</p>
               <p className="text-sm text-muted-foreground mt-1">
-                Para a tabela de itens, crie uma tabela no Word com as colunas desejadas e use o
-                campo <code className="text-info">{'{{tabela_itens}}'}</code> na primeira linha de
-                dados.
+                O bloco <code className="text-info">{'{#itens}...{/itens}'}</code> será repetido
+                automaticamente para cada item da proposta, mantendo a formatação do Word.
               </p>
             </div>
           </CardContent>
