@@ -1,204 +1,127 @@
 
-## Plano: Corrigir Template Obrigatório, Erro de Parsing e Bloqueio de Popup
 
-### Resumo dos Problemas Identificados
+## Plano: Corrigir Erro "Duplicate Open Tag" na Geração de PDF
 
-| Problema | Causa Raiz | Log/Evidência |
-|----------|-----------|---------------|
-| Template não usado | Sistema faz fallback para PDF padrão quando há erro | `usedCustomTemplate: false` |
-| Erro "Duplicate open tag" | Word fragmenta as tags `{{` em elementos XML separados | `xtag: "{{data"` nos logs |
-| Popup bloqueada | URL do Supabase Storage bloqueada diretamente | `ERR_BLOCKED_BY_CLIENT` |
+### Problema Identificado
 
----
+O erro persiste porque a função `fixFragmentedTags` atual não está funcionando corretamente. O Microsoft Word está dividindo a tag `{{data}}` em múltiplos elementos XML separados, como:
+
+```xml
+<w:r><w:t>{{</w:t></w:r><w:r><w:t>data</w:t></w:r><w:r><w:t>}}</w:t></w:r>
+```
+
+Isso faz com que o `docxtemplater` veja `{{` e `{{` como duas aberturas de tag diferentes, gerando o erro "Duplicate open tag".
 
 ### Solução Proposta
 
-#### 1. Remover Fallback - Template é Obrigatório
+Vou implementar uma nova abordagem com duas camadas de proteção:
 
-**Arquivo:** `supabase/functions/generate-pdf/index.ts`
-
-Quando não houver template ativo ou quando o template tiver erro de processamento, retornar erro em vez de gerar PDF padrão:
-
-**Mudanças:**
-- Se não existir template ativo → retornar erro 400 com mensagem clara
-- Se houver erro ao processar template → retornar erro 500 com detalhes do problema (não fazer fallback)
-- Adicionar detalhes de diagnóstico no erro para facilitar correção do template
-
-#### 2. Corrigir Parsing de Tags com InspectModule
-
-**Arquivo:** `supabase/functions/generate-pdf/index.ts`
-
-O problema `{{data` indica que o Word está salvando as chaves em elementos XML separados. Solução: usar o **InspectModule** do Docxtemplater para ajudar a identificar problemas, ou implementar um pré-processamento que limpa as tags corrompidas.
-
-**Abordagem principal:** Adicionar melhor tratamento de erros com mensagens claras sobre qual tag está com problema e como corrigir.
-
-#### 3. Corrigir Bloqueio de Popup
-
-**Problema:** O Chrome está bloqueando o redirecionamento para a URL do Supabase Storage (`ocigsqgbccaeeypqegrv.supabase.co`).
-
-**Arquivo:** `src/hooks/usePdfGeneration.ts`
-
-**Solução:** Em vez de redirecionar a janela popup para a URL do Storage, vamos:
-1. Fazer fetch do PDF no frontend
-2. Criar um Blob URL local (`blob:...`)
-3. Redirecionar a popup para o Blob URL
-4. Isso evita bloqueios de extensões/navegadores
-
----
+| Camada | Descrição |
+|--------|-----------|
+| 1. Pré-processamento de texto | Antes do docxtemplater, juntar TODO o texto de cada parágrafo em um único `<w:t>` |
+| 2. Delimitadores únicos | Usar delimitadores de caractere único (`{` e `}`) em vez de duplos (`{{` e `}}`) para evitar fragmentação |
 
 ### Detalhes Técnicos
 
-#### Arquivo 1: `supabase/functions/generate-pdf/index.ts`
+#### 1. Nova função `mergeRunsInParagraph`
 
-**Mudança 1 - Erro quando não há template (linhas ~676-684):**
-```typescript
-// Antes: usava fallback silenciosamente
-if (!template || templateError) {
-  console.log('No active template found, using default pdf-lib template');
-  pdfBuffer = await generateDefaultPdf(proposalData);
-}
+Criar uma nova função que:
+- Identifica todos os parágrafos (`<w:p>`) que contêm possíveis tags de template (procurando por `{` e `}`)
+- Para cada parágrafo identificado, extrai TODO o texto de todos os elementos `<w:t>`
+- Reconstrói o parágrafo com um único `<w:r>` contendo todo o texto consolidado
+- Preserva as propriedades de parágrafo (`<w:pPr>`)
 
-// Depois: retorna erro obrigatório
-if (!template || templateError) {
-  console.error('No active template found - template is required');
-  return new Response(
-    JSON.stringify({ 
-      error: 'Template não encontrado', 
-      details: 'É necessário ter um template ativo para gerar PDFs. Acesse a página de Templates e faça upload de um arquivo .docx.' 
-    }),
-    { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-  );
-}
+#### 2. Alterar delimitadores do docxtemplater
+
+Configurar o docxtemplater para usar delimitadores de caractere único:
+```javascript
+delimiters: { start: '{', end: '}' }
 ```
 
-**Mudança 2 - Erro detalhado no processamento do template (linhas ~737-740):**
-```typescript
-// Antes: fallback para padrão
-} catch (templateProcessError) {
-  console.error('Error processing custom template, falling back to default:', templateProcessError);
-  pdfBuffer = await generateDefaultPdf(proposalData);
-}
+Isso reduz drasticamente a chance de fragmentação, já que `{` e `}` são caracteres únicos.
 
-// Depois: retorna erro com detalhes
-} catch (templateProcessError) {
-  console.error('Error processing custom template:', templateProcessError);
-  
-  // Extrair mensagem de erro útil
-  let errorMessage = 'Erro ao processar template';
-  let errorDetails = String(templateProcessError);
-  
-  if (templateProcessError?.properties?.errors) {
-    const errors = templateProcessError.properties.errors;
-    const firstError = errors[0];
-    if (firstError?.properties?.xtag) {
-      errorMessage = `Erro na tag: "${firstError.properties.xtag}"`;
-      errorDetails = `${firstError.properties.explanation || ''}. Dica: Abra o template Word, delete completamente a tag e digite-a novamente sem pausas.`;
-    }
-  }
-  
-  return new Response(
-    JSON.stringify({ 
-      error: errorMessage, 
-      details: errorDetails 
-    }),
-    { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-  );
-}
-```
+#### 3. Atualizar documentação de tags
 
-#### Arquivo 2: `src/hooks/usePdfGeneration.ts`
+As tags no template passam a usar chaves simples:
+- `{cliente_nome}` em vez de `{{cliente_nome}}`
+- `{data}` em vez de `{{data}}`
+- `{#itens}...{/itens}` (loops já usam chaves simples)
 
-**Mudança - Usar Blob URL para evitar bloqueio (função previewPdf):**
-```typescript
-const previewPdf = async (proposalId: string, existingWindow?: Window | null) => {
-  const targetWindow = existingWindow ?? window.open('', '_blank');
-  
-  if (!targetWindow && !existingWindow) {
-    toast({
-      title: 'Popup bloqueado',
-      description: 'Permita popups para este site ou use "Baixar PDF".',
-      variant: 'destructive',
-    });
-    return null;
-  }
-  
-  if (targetWindow && !existingWindow) {
-    targetWindow.document.write(LOADING_HTML);
-  }
-  
-  const result = await generatePdf(proposalId);
-  
-  if (result?.pdfUrl && targetWindow) {
-    try {
-      // Fazer fetch do PDF e criar Blob URL local para evitar bloqueio
-      const response = await fetch(withCacheBuster(result.pdfUrl));
-      const blob = await response.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      
-      targetWindow.location.href = blobUrl;
-    } catch (fetchError) {
-      console.error('Error fetching PDF for preview:', fetchError);
-      // Fallback: tentar URL direta
-      targetWindow.location.href = withCacheBuster(result.pdfUrl);
-    }
-  } else if (targetWindow) {
-    try {
-      targetWindow.document.open();
-      targetWindow.document.write(ERROR_HTML);
-      targetWindow.document.close();
-    } catch {
-      targetWindow.close();
-    }
-  }
-  
-  return result;
-};
-```
-
----
-
-### Sobre o Erro no Seu Template
-
-O erro `"Duplicate open tag: {{data"` indica que o Word salvou a tag `{{data}}` de forma fragmentada internamente. Isso acontece quando:
-
-1. Você digita `{{data}}` pausadamente
-2. Você edita parte da tag depois de digitar
-3. O Word aplica formatação diferente às chaves
-
-**Para corrigir seu template atual:**
-1. Abra o arquivo `.docx` no Word
-2. Localize TODAS as tags (como `{{data}}`, `{{cliente_nome}}`, etc.)
-3. Para cada tag:
-   - Selecione a tag inteira
-   - Delete completamente
-   - Digite novamente de uma só vez, sem pausas
-4. Salve o arquivo
-5. Faça upload novamente
-
-**Dica:** Uma forma segura é copiar a tag de um texto simples (Notepad) e colar no Word.
-
----
-
-### Arquivos a Serem Modificados
+### Arquivos a Modificar
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `supabase/functions/generate-pdf/index.ts` | Remover fallback, retornar erros claros quando template falhar |
-| `src/hooks/usePdfGeneration.ts` | Usar Blob URL para preview evitando bloqueio do Chrome |
+| `supabase/functions/generate-pdf/index.ts` | Substituir `fixFragmentedTags` por `mergeRunsInParagraph`, adicionar configuração `delimiters: { start: '{', end: '}' }` |
 
----
+### Código da Solução
 
-### Resultado Esperado
+**Nova função `mergeRunsInParagraph`:**
+```javascript
+function mergeRunsInParagraph(xmlContent: string): string {
+  // Processa cada parágrafo individualmente
+  return xmlContent.replace(
+    /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g,
+    (paragraph) => {
+      // Verifica se o parágrafo contém possíveis delimitadores de template
+      if (!paragraph.includes('{') && !paragraph.includes('}')) {
+        return paragraph;
+      }
+      
+      // Extrai todo o texto dos elementos <w:t>
+      const textMatches = [...paragraph.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)];
+      if (textMatches.length <= 1) {
+        return paragraph; // Já está consolidado
+      }
+      
+      const fullText = textMatches.map(m => m[1]).join('');
+      
+      // Se não há delimitadores de template no texto combinado, não precisa modificar
+      if (!fullText.includes('{') && !fullText.includes('}')) {
+        return paragraph;
+      }
+      
+      // Preserva propriedades do parágrafo
+      const pPrMatch = paragraph.match(/<w:pPr>[\s\S]*?<\/w:pPr>/);
+      const pPr = pPrMatch ? pPrMatch[0] : '';
+      
+      // Reconstrói o parágrafo com um único <w:r> contendo todo o texto
+      return `<w:p>${pPr}<w:r><w:t xml:space="preserve">${fullText}</w:t></w:r></w:p>`;
+    }
+  );
+}
+```
 
-Após a implementação:
-1. **Sem template ativo** → Erro claro: "Template não encontrado"
-2. **Template com tags inválidas** → Erro detalhado: "Erro na tag: {{data - Abra o template e redigite a tag"
-3. **Preview do PDF** → Abre corretamente sem bloqueio do Chrome
-4. **Template válido** → Gera PDF usando seu template customizado
+**Atualização na criação do Docxtemplater:**
+```javascript
+const doc = new Docxtemplater(zip, {
+  paragraphLoop: true,
+  linebreaks: true,
+  delimiters: { start: '{', end: '}' }, // Delimitadores simples
+});
+```
 
-### Próximo Passo do Usuário
+### Template Atualizado
 
-Após implementar estas correções, você precisará:
-1. Corrigir as tags no seu template Word (redigitar sem pausas)
-2. Fazer upload do template corrigido
-3. Testar a geração de PDF novamente
+Com esta mudança, o template passa a usar chaves simples:
+
+| Antes (não funciona) | Depois (funciona) |
+|---------------------|-------------------|
+| `{{cliente_nome}}` | `{cliente_nome}` |
+| `{{data}}` | `{data}` |
+| `{{valor_total}}` | `{valor_total}` |
+
+Os loops já usam a sintaxe correta: `{#itens}...{/itens}`
+
+### Vantagens desta Abordagem
+
+1. **Menos fragmentação**: Caracteres únicos são menos propensos a serem divididos pelo Word
+2. **Pré-processamento robusto**: Consolida o texto antes do parsing, evitando erros de "duplicate tag"
+3. **Compatibilidade**: A sintaxe `{tag}` é mais simples e intuitiva para os usuários
+
+### Passo do Usuário
+
+Após a implementação, você precisará:
+1. Atualizar seu template Word para usar chaves simples (`{data}` em vez de `{{data}}`)
+2. Fazer upload do template atualizado
+3. Testar a geração de PDF
+
