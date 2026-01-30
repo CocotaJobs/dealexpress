@@ -735,12 +735,40 @@ Deno.serve(async (req) => {
 
         console.log('PDF generated from custom template via PDF.co');
       } catch (templateProcessError) {
-        console.error('Error processing custom template, falling back to default:', templateProcessError);
-        pdfBuffer = await generateDefaultPdf(proposalData);
+        console.error('Error processing custom template:', templateProcessError);
+        
+        // Extract useful error message for the user
+        let errorMessage = 'Erro ao processar template';
+        let errorDetails = String(templateProcessError);
+        
+        // deno-lint-ignore no-explicit-any
+        const tplError = templateProcessError as any;
+        if (tplError?.properties?.errors) {
+          const errors = tplError.properties.errors;
+          const firstError = errors[0];
+          if (firstError?.properties?.xtag) {
+            errorMessage = `Erro na tag: "${firstError.properties.xtag}"`;
+            errorDetails = `${firstError.properties.explanation || 'Tag malformada'}. Dica: Abra o template Word, delete completamente a tag e digite-a novamente de uma só vez, sem pausas.`;
+          }
+        }
+        
+        return new Response(
+          JSON.stringify({ 
+            error: errorMessage, 
+            details: errorDetails 
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
     } else {
-      console.log('No active template found, using default pdf-lib template');
-      pdfBuffer = await generateDefaultPdf(proposalData);
+      console.error('No active template found - template is required');
+      return new Response(
+        JSON.stringify({ 
+          error: 'Template não encontrado', 
+          details: 'É necessário ter um template ativo para gerar PDFs. Acesse a página de Templates e faça upload de um arquivo .docx.' 
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     // Save PDF to storage
