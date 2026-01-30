@@ -19,6 +19,7 @@ interface ProposalItem {
   item_price: number;
   discount: number;
   subtotal: number;
+  item_description?: string; // From items table
 }
 
 interface ProposalData {
@@ -96,11 +97,23 @@ async function processDocxTemplate(
 ): Promise<Uint8Array> {
   const { proposal, items, vendor, organization, totalValue } = data;
 
-  // Create items table text
+  // Create items table text (fallback for {{tabela_itens}})
   const itemsTable = generateItemsTable(items, totalValue);
 
+  // Create items array for loop syntax {#itens}...{/itens}
+  const itensArray = items.map((item, index) => ({
+    nome: item.item_name || '',
+    descricao: item.item_description || '',
+    valor: formatCurrency(Number(item.subtotal)),
+    quantidade: String(item.quantity),
+    valor_unitario: formatCurrency(Number(item.item_price)),
+    desconto: Number(item.discount) > 0 ? `${Number(item.discount)}%` : '',
+    indice: String(index + 1),
+  }));
+
   // Map all dynamic fields
-  const templateData = {
+  // deno-lint-ignore no-explicit-any
+  const templateData: Record<string, any> = {
     cliente_nome: proposal.client_name || '',
     cliente_email: proposal.client_email || '',
     cliente_whatsapp: proposal.client_whatsapp || '',
@@ -117,19 +130,28 @@ async function processDocxTemplate(
     condicoes_pagamento: proposal.payment_conditions || '',
     validade_proposta: proposal.expires_at ? formatDate(proposal.expires_at) : '',
     validade_dias: String(proposal.validity_days),
+    // Loop array for dynamic items
+    itens: itensArray,
   };
 
+  // Sanitize all fields to prevent "undefined" in output
+  Object.keys(templateData).forEach(key => {
+    if (templateData[key] === undefined || templateData[key] === null) {
+      templateData[key] = '';
+    }
+  });
+
   console.log('Processing template with data keys:', Object.keys(templateData));
+  console.log('Items array for loop:', JSON.stringify(itensArray, null, 2));
 
   try {
     // Load the docx as a zip
     const zip = new PizZip(templateBuffer);
     
-    // Create docxtemplater instance
+    // Create docxtemplater instance with both delimiters for flexibility
     const doc = new Docxtemplater(zip, {
       paragraphLoop: true,
       linebreaks: true,
-      delimiters: { start: '{{', end: '}}' },
     });
 
     // Render the document with data
@@ -604,15 +626,21 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Fetch proposal items
-    const { data: items, error: itemsError } = await supabaseAdmin
+    // Fetch proposal items with item descriptions from items table
+    const { data: proposalItemsRaw, error: itemsError } = await supabaseAdmin
       .from('proposal_items')
-      .select('*')
+      .select('*, items:item_id(description)')
       .eq('proposal_id', proposalId);
 
     if (itemsError) {
       console.error('Error fetching items:', itemsError);
     }
+
+    // Map items to include description from the joined items table
+    const items = (proposalItemsRaw || []).map((pi: { items?: { description?: string } | null } & ProposalItem) => ({
+      ...pi,
+      item_description: pi.items?.description || '',
+    }));
 
     // Fetch vendor
     const { data: vendor } = await supabaseAdmin
