@@ -123,8 +123,18 @@ export function usePdfGeneration() {
     const result = await generatePdf(proposalId);
     
     if (result?.pdfUrl && targetWindow) {
-      // Avoid showing a cached PDF when using the same public URL
-      targetWindow.location.href = withCacheBuster(result.pdfUrl);
+      try {
+        // Fetch PDF and create local Blob URL to avoid Chrome blocking
+        const response = await fetch(withCacheBuster(result.pdfUrl));
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        
+        targetWindow.location.href = blobUrl;
+      } catch (fetchError) {
+        console.error('Error fetching PDF for preview:', fetchError);
+        // Fallback: try direct URL
+        targetWindow.location.href = withCacheBuster(result.pdfUrl);
+      }
     } else if (targetWindow) {
       // Show error message in the window
       try {
