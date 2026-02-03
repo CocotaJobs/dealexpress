@@ -19,6 +19,7 @@ import Items from "./pages/Items";
 import Templates from "./pages/Templates";
 import Users from "./pages/Users";
 import WhatsApp from "./pages/WhatsApp";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -47,6 +48,7 @@ const App = () => (
                 <Route path="/templates" element={<Templates />} />
                 <Route path="/users" element={<Users />} />
                 <Route path="/whatsapp" element={<WhatsApp />} />
+                <Route path="/settings" element={<Settings />} />
               </Route>
               
               {/* Redirects */}
