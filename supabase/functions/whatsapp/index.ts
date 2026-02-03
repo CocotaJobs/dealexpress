@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
   if (!EVOLUTION_API_URL) {
     console.error('EVOLUTION_API_URL is not configured');
     return new Response(
-      JSON.stringify({ error: 'Evolution API URL not configured' }),
+      JSON.stringify({ error: 'Serviço temporariamente indisponível' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
   if (!EVOLUTION_API_KEY) {
     console.error('EVOLUTION_API_KEY is not configured');
     return new Response(
-      JSON.stringify({ error: 'Evolution API key not configured' }),
+      JSON.stringify({ error: 'Serviço temporariamente indisponível' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     console.error('Supabase credentials not configured');
     return new Response(
-      JSON.stringify({ error: 'Supabase credentials not configured' }),
+      JSON.stringify({ error: 'Serviço temporariamente indisponível' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
@@ -133,14 +133,16 @@ Deno.serve(async (req) => {
       
       default:
         return new Response(
-          JSON.stringify({ error: 'Invalid action' }),
+          JSON.stringify({ error: 'Ação inválida' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }
   } catch (error) {
+    // Log detailed error server-side only
     console.error('Error processing request:', error);
+    // Return generic error to client
     return new Response(
-      JSON.stringify({ error: 'Internal server error', details: String(error) }),
+      JSON.stringify({ error: 'Erro ao processar solicitação' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
@@ -245,7 +247,7 @@ async function handleCreate(
     const errorText = await createResponse.text();
     console.error('Evolution API error:', createResponse.status, errorText);
     return new Response(
-      JSON.stringify({ error: 'Failed to create WhatsApp instance', details: errorText }),
+      JSON.stringify({ error: 'Falha ao criar instância do WhatsApp' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
@@ -467,7 +469,7 @@ async function handleSendMessage(
       const errorText = await response.text();
       console.error('Error sending media:', errorText);
       return new Response(
-        JSON.stringify({ error: 'Failed to send media', details: errorText }),
+        JSON.stringify({ error: 'Falha ao enviar mídia' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -495,7 +497,7 @@ async function handleSendMessage(
       const errorText = await response.text();
       console.error('Error sending message:', errorText);
       return new Response(
-        JSON.stringify({ error: 'Failed to send message', details: errorText }),
+        JSON.stringify({ error: 'Falha ao enviar mensagem' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
