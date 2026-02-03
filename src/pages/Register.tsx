@@ -137,7 +137,8 @@ export default function Register() {
     setIsLoading(true);
 
     try {
-      const { error: signUpError } = await signUp(email, password, name);
+      // Pass the invitation token so the backend can bind the user correctly
+      const { error: signUpError } = await signUp(email, password, name, inviteToken || undefined);
       
       if (signUpError) {
         if (signUpError.message.includes('already registered')) {
