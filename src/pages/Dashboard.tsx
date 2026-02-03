@@ -280,53 +280,56 @@ export default function Dashboard() {
                 </div>
               </div>
             ) : (
-              <div className="h-[300px] relative">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={90}
-                      paddingAngle={2}
-                      dataKey="value"
-                    >
-                      {pieData.map((entry, index) => (
-                        <Cell 
-                          key={`cell-${index}`} 
-                          fill={entry.color} 
-                          className="cursor-pointer hover:opacity-80 transition-opacity"
-                          onClick={() => handlePieClick(entry)}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: '8px',
-                        color: 'hsl(var(--foreground))',
-                      }}
-                      itemStyle={{
-                        color: 'hsl(var(--foreground))',
-                      }}
-                      labelStyle={{
-                        color: 'hsl(var(--foreground))',
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+              <div className="h-[300px] flex flex-col">
+                <div className="flex-1 relative">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={pieData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={90}
+                        paddingAngle={2}
+                        dataKey="value"
+                      >
+                        {pieData.map((entry, index) => (
+                          <Cell 
+                            key={`cell-${index}`} 
+                            fill={entry.color} 
+                            className="cursor-pointer hover:opacity-80 transition-opacity"
+                            onClick={() => handlePieClick(entry)}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'hsl(var(--card))',
+                          border: '1px solid hsl(var(--border))',
+                          borderRadius: '8px',
+                          color: 'hsl(var(--foreground))',
+                        }}
+                        itemStyle={{
+                          color: 'hsl(var(--foreground))',
+                        }}
+                        labelStyle={{
+                          color: 'hsl(var(--foreground))',
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
                 {/* Legend */}
-                <div className="absolute bottom-0 left-0 right-0 flex justify-center gap-4 text-xs">
+                <div className="flex justify-center gap-4 text-xs pt-2 pb-1">
                   {pieData.map((item, index) => (
                     <button
                       key={index}
-                      className="flex items-center gap-1 hover:opacity-70 transition-opacity cursor-pointer"
+                      type="button"
+                      className="flex items-center gap-1.5 hover:opacity-70 transition-opacity cursor-pointer py-1 px-2 rounded hover:bg-muted/50"
                       onClick={() => handlePieClick(item)}
                     >
                       <div
-                        className="w-3 h-3 rounded-full"
+                        className="w-3 h-3 rounded-full shrink-0"
                         style={{ backgroundColor: item.color }}
                       />
                       <span className="text-muted-foreground">
