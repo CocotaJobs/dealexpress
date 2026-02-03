@@ -37,28 +37,19 @@ export default function Register() {
   const navigate = useNavigate();
   const { signUp } = useAuth();
 
-  // Fetch invitation info if token is present
+  // Fetch invitation info if token is present using secure RPC
   useEffect(() => {
     const fetchInvitationInfo = async () => {
       if (!inviteToken) return;
 
       setIsLoadingInvite(true);
       try {
-        const { data: invitation, error: inviteError } = await supabase
-          .from('invitations')
-          .select(`
-            email,
-            role,
-            expires_at,
-            status,
-            organization_id,
-            organizations (name)
-          `)
-          .eq('token', inviteToken)
-          .maybeSingle();
+        // Use secure RPC function to validate token server-side
+        const { data: validationResult, error: rpcError } = await supabase
+          .rpc('validate_invitation_token', { _token: inviteToken });
 
-        if (inviteError) {
-          console.error('Error fetching invitation:', inviteError);
+        if (rpcError) {
+          console.error('Error validating invitation:', rpcError);
           setInvitationInfo({
             email: inviteEmail,
             role: 'vendor',
@@ -70,55 +61,37 @@ export default function Register() {
           return;
         }
 
-        if (!invitation) {
+        const result = validationResult as {
+          isValid: boolean;
+          email?: string;
+          role?: 'admin' | 'vendor';
+          organizationName?: string;
+          expiresAt?: string;
+          errorMessage?: string;
+        };
+
+        if (!result.isValid) {
           setInvitationInfo({
             email: inviteEmail,
             role: 'vendor',
             organizationName: '',
             expiresAt: '',
             isValid: false,
-            errorMessage: 'Convite não encontrado ou inválido',
-          });
-          return;
-        }
-
-        if (invitation.status !== 'pending') {
-          setInvitationInfo({
-            email: invitation.email,
-            role: invitation.role,
-            organizationName: (invitation.organizations as { name: string })?.name || '',
-            expiresAt: invitation.expires_at,
-            isValid: false,
-            errorMessage: invitation.status === 'accepted' 
-              ? 'Este convite já foi utilizado' 
-              : 'Este convite expirou',
-          });
-          return;
-        }
-
-        const expiresAt = new Date(invitation.expires_at);
-        if (expiresAt < new Date()) {
-          setInvitationInfo({
-            email: invitation.email,
-            role: invitation.role,
-            organizationName: (invitation.organizations as { name: string })?.name || '',
-            expiresAt: invitation.expires_at,
-            isValid: false,
-            errorMessage: 'Este convite expirou',
+            errorMessage: result.errorMessage || 'Convite inválido',
           });
           return;
         }
 
         setInvitationInfo({
-          email: invitation.email,
-          role: invitation.role,
-          organizationName: (invitation.organizations as { name: string })?.name || '',
-          expiresAt: invitation.expires_at,
+          email: result.email || inviteEmail,
+          role: result.role || 'vendor',
+          organizationName: result.organizationName || '',
+          expiresAt: result.expiresAt || '',
           isValid: true,
         });
-        setEmail(invitation.email);
+        setEmail(result.email || inviteEmail);
       } catch (err) {
-        console.error('Error fetching invitation:', err);
+        console.error('Error validating invitation:', err);
         setInvitationInfo({
           email: inviteEmail,
           role: 'vendor',
