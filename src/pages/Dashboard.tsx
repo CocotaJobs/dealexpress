@@ -1,7 +1,7 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   FileText,
@@ -40,9 +40,10 @@ interface StatCardProps {
   changeType?: 'positive' | 'negative' | 'neutral';
   icon: React.ElementType;
   isLoading?: boolean;
+  href?: string;
 }
 
-function StatCard({ title, value, change, changeType, icon: Icon, isLoading }: StatCardProps) {
+function StatCard({ title, value, change, changeType, icon: Icon, isLoading, href }: StatCardProps) {
   if (isLoading) {
     return (
       <Card className="stat-card">
@@ -60,37 +61,51 @@ function StatCard({ title, value, change, changeType, icon: Icon, isLoading }: S
     );
   }
 
+  const cardContent = (
+    <CardContent className="p-0">
+      <div className="flex items-start justify-between">
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-muted-foreground">{title}</p>
+          <p className="text-3xl font-bold text-foreground">{value}</p>
+          {change && (
+            <div
+              className={`flex items-center gap-1 text-sm font-medium ${
+                changeType === 'positive'
+                  ? 'text-green-600 dark:text-green-400'
+                  : changeType === 'negative'
+                  ? 'text-destructive'
+                  : 'text-muted-foreground'
+              }`}
+            >
+              {changeType === 'positive' ? (
+                <ArrowUpRight className="w-4 h-4" />
+              ) : changeType === 'negative' ? (
+                <ArrowDownRight className="w-4 h-4" />
+              ) : null}
+              {change}
+            </div>
+          )}
+        </div>
+        <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+          <Icon className="w-6 h-6 text-primary" />
+        </div>
+      </div>
+    </CardContent>
+  );
+
+  if (href) {
+    return (
+      <Link to={href} className="block">
+        <Card className="stat-card hover-lift cursor-pointer group">
+          {cardContent}
+        </Card>
+      </Link>
+    );
+  }
+
   return (
     <Card className="stat-card">
-      <CardContent className="p-0">
-        <div className="flex items-start justify-between">
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <p className="text-3xl font-bold text-foreground">{value}</p>
-            {change && (
-              <div
-                className={`flex items-center gap-1 text-sm font-medium ${
-                  changeType === 'positive'
-                    ? 'text-green-600 dark:text-green-400'
-                    : changeType === 'negative'
-                    ? 'text-destructive'
-                    : 'text-muted-foreground'
-                }`}
-              >
-                {changeType === 'positive' ? (
-                  <ArrowUpRight className="w-4 h-4" />
-                ) : changeType === 'negative' ? (
-                  <ArrowDownRight className="w-4 h-4" />
-                ) : null}
-                {change}
-              </div>
-            )}
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-            <Icon className="w-6 h-6 text-primary" />
-          </div>
-        </div>
-      </CardContent>
+      {cardContent}
     </Card>
   );
 }
@@ -121,11 +136,17 @@ export default function Dashboard() {
     return formatCurrency(value);
   };
 
+  const navigate = useNavigate();
+
   const pieData = [
-    { name: 'Rascunho', value: metrics.proposals.byStatus.draft, color: 'hsl(var(--muted-foreground))' },
-    { name: 'Enviadas', value: metrics.proposals.byStatus.sent, color: 'hsl(var(--primary))' },
-    { name: 'Expiradas', value: metrics.proposals.byStatus.expired, color: 'hsl(var(--destructive))' },
+    { name: 'Rascunho', value: metrics.proposals.byStatus.draft, color: 'hsl(var(--muted-foreground))', status: 'draft' },
+    { name: 'Enviadas', value: metrics.proposals.byStatus.sent, color: 'hsl(var(--primary))', status: 'sent' },
+    { name: 'Expiradas', value: metrics.proposals.byStatus.expired, color: 'hsl(var(--destructive))', status: 'expired' },
   ].filter(item => item.value > 0);
+
+  const handlePieClick = (data: { status: string }) => {
+    navigate(`/proposals?status=${data.status}`);
+  };
 
   const proposalsChange = metrics.previousMonthComparison.proposalsChange;
   const valueChange = metrics.previousMonthComparison.valueChange;
@@ -161,6 +182,7 @@ export default function Dashboard() {
           changeType={proposalsChange > 0 ? 'positive' : proposalsChange < 0 ? 'negative' : 'neutral'}
           icon={FileText}
           isLoading={isLoading}
+          href="/proposals"
         />
         <StatCard
           title="Valor Total"
@@ -169,18 +191,21 @@ export default function Dashboard() {
           changeType={valueChange > 0 ? 'positive' : valueChange < 0 ? 'negative' : 'neutral'}
           icon={DollarSign}
           isLoading={isLoading}
+          href="/proposals"
         />
         <StatCard
           title={isAdmin ? 'Ticket Médio' : 'Propostas Enviadas'}
           value={isAdmin ? formatCurrency(metrics.proposals.avgValue) : metrics.proposals.byStatus.sent.toString()}
           icon={isAdmin ? TrendingUp : FileCheck}
           isLoading={isLoading}
+          href={isAdmin ? undefined : '/proposals?status=sent'}
         />
         <StatCard
           title={isAdmin ? 'Usuários Ativos' : 'Rascunhos'}
           value={isAdmin ? metrics.users.active.toString() : metrics.proposals.byStatus.draft.toString()}
           icon={isAdmin ? Users : Clock}
           isLoading={isLoading}
+          href={isAdmin ? '/users' : '/proposals?status=draft'}
         />
       </div>
 
@@ -268,7 +293,12 @@ export default function Dashboard() {
                       dataKey="value"
                     >
                       {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
+                        <Cell 
+                          key={`cell-${index}`} 
+                          fill={entry.color} 
+                          className="cursor-pointer hover:opacity-80 transition-opacity"
+                          onClick={() => handlePieClick(entry)}
+                        />
                       ))}
                     </Pie>
                     <Tooltip
@@ -283,7 +313,11 @@ export default function Dashboard() {
                 {/* Legend */}
                 <div className="absolute bottom-0 left-0 right-0 flex justify-center gap-4 text-xs">
                   {pieData.map((item, index) => (
-                    <div key={index} className="flex items-center gap-1">
+                    <button
+                      key={index}
+                      className="flex items-center gap-1 hover:opacity-70 transition-opacity cursor-pointer"
+                      onClick={() => handlePieClick(item)}
+                    >
                       <div
                         className="w-3 h-3 rounded-full"
                         style={{ backgroundColor: item.color }}
@@ -291,7 +325,7 @@ export default function Dashboard() {
                       <span className="text-muted-foreground">
                         {item.name} ({item.value})
                       </span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </div>
