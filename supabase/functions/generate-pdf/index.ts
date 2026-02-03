@@ -185,8 +185,13 @@ function mergeRunsInParagraph(xmlContent: string): string {
       const pOpenMatch = paragraph.match(/^<w:p\b[^>]*>/);
       const pOpen = pOpenMatch ? pOpenMatch[0] : '<w:p>';
       
-      // Reconstruct the paragraph with a single run containing all text
-      return `${pOpen}${pPr}<w:r><w:t xml:space="preserve">${fullText}</w:t></w:r></w:p>`;
+      // Extract run properties (formatting like bold, italic, font) from the first run that has them
+      // This preserves formatting when consolidating fragmented runs
+      const rPrMatch = paragraph.match(/<w:r[^>]*>[\s\S]*?<w:rPr>([\s\S]*?)<\/w:rPr>[\s\S]*?<w:t/);
+      const rPr = rPrMatch ? `<w:rPr>${rPrMatch[1]}</w:rPr>` : '';
+      
+      // Reconstruct the paragraph with a single run containing all text and preserved formatting
+      return `${pOpen}${pPr}<w:r>${rPr}<w:t xml:space="preserve">${fullText}</w:t></w:r></w:p>`;
     }
   );
   
