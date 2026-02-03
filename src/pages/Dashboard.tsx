@@ -514,47 +514,53 @@ export default function Dashboard() {
 
       {/* Status Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">
-        <Card className="shadow-card border-l-4 border-l-muted-foreground">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <Clock className="w-5 h-5 text-muted-foreground" />
-              <div>
-                <p className="text-sm text-muted-foreground">Rascunhos</p>
-                <p className="text-2xl font-bold">
-                  {isLoading ? <Skeleton className="h-7 w-10 inline-block" /> : metrics.proposals.byStatus.draft}
-                </p>
+        <Link to="/proposals?status=draft">
+          <Card className="shadow-card border-l-4 border-l-muted-foreground hover-lift cursor-pointer group">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Clock className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Rascunhos</p>
+                  <p className="text-2xl font-bold">
+                    {isLoading ? <Skeleton className="h-7 w-10 inline-block" /> : metrics.proposals.byStatus.draft}
+                  </p>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card className="shadow-card border-l-4 border-l-primary">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <Send className="w-5 h-5 text-primary" />
-              <div>
-                <p className="text-sm text-muted-foreground">Enviadas</p>
-                <p className="text-2xl font-bold">
-                  {isLoading ? <Skeleton className="h-7 w-10 inline-block" /> : metrics.proposals.byStatus.sent}
-                </p>
+        <Link to="/proposals?status=sent">
+          <Card className="shadow-card border-l-4 border-l-primary hover-lift cursor-pointer group">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Send className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Enviadas</p>
+                  <p className="text-2xl font-bold">
+                    {isLoading ? <Skeleton className="h-7 w-10 inline-block" /> : metrics.proposals.byStatus.sent}
+                  </p>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card className="shadow-card border-l-4 border-l-destructive">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="w-5 h-5 text-destructive" />
-              <div>
-                <p className="text-sm text-muted-foreground">Expiradas</p>
-                <p className="text-2xl font-bold">
-                  {isLoading ? <Skeleton className="h-7 w-10 inline-block" /> : metrics.proposals.byStatus.expired}
-                </p>
+        <Link to="/proposals?status=expired">
+          <Card className="shadow-card border-l-4 border-l-destructive hover-lift cursor-pointer group">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 text-destructive group-hover:scale-110 transition-transform" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Expiradas</p>
+                  <p className="text-2xl font-bold">
+                    {isLoading ? <Skeleton className="h-7 w-10 inline-block" /> : metrics.proposals.byStatus.expired}
+                  </p>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
     </div>
   );
