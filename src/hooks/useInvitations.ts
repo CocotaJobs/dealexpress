@@ -105,10 +105,6 @@ export function useInvitations() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['invitations'] });
-      toast({
-        title: 'Convite reenviado!',
-        description: `Novo link gerado para ${data.email}`,
-      });
     },
     onError: (error: Error) => {
       toast({
@@ -122,6 +118,11 @@ export function useInvitations() {
 
   const pendingInvitations = invitations.filter(inv => inv.status === 'pending');
 
+  const getInviteLink = (invitation: Invitation) => {
+    const baseUrl = window.location.origin;
+    return `${baseUrl}/register?token=${invitation.token}&email=${encodeURIComponent(invitation.email)}`;
+  };
+
   return {
     invitations,
     pendingInvitations,
@@ -129,8 +130,11 @@ export function useInvitations() {
     error,
     createInvitation: createInvitation.mutate,
     cancelInvitation: cancelInvitation.mutate,
-    resendInvitation: resendInvitation.mutate,
+    resendInvitation: resendInvitation.mutateAsync,
     isCreating: createInvitation.isPending,
+    isResending: resendInvitation.isPending,
     lastCreatedInvitation: createInvitation.data,
+    lastResendData: resendInvitation.data,
+    getInviteLink,
   };
 }

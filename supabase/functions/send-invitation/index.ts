@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { Resend } from 'https://esm.sh/resend@4.0.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -14,6 +15,7 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const resendApiKey = Deno.env.get('RESEND_API_KEY');
 
     // Get the authorization header
     const authHeader = req.headers.get('Authorization');
@@ -67,6 +69,15 @@ Deno.serve(async (req) => {
       }
       organizationId = profile.organization_id;
     }
+
+    // Get organization name
+    const { data: organization, error: orgNameError } = await supabaseAdmin
+      .from('organizations')
+      .select('name')
+      .eq('id', organizationId)
+      .single();
+
+    const organizationName = organization?.name || 'Sua Organização';
 
     // Parse request body
     const { email, role } = await req.json();
@@ -146,6 +157,89 @@ Deno.serve(async (req) => {
 
     console.log('Invitation created successfully:', { email, role, inviteLink });
 
+    // Send email via Resend if API key is configured
+    let emailSent = false;
+    if (resendApiKey) {
+      try {
+        const resend = new Resend(resendApiKey);
+        
+        const roleName = role === 'admin' ? 'Administrador' : 'Vendedor';
+        
+        const { error: emailError } = await resend.emails.send({
+          from: 'Convites <onboarding@resend.dev>',
+          to: [email],
+          subject: `Você foi convidado para ${organizationName}`,
+          html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            </head>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f5;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5; padding: 40px 20px;">
+                <tr>
+                  <td align="center">
+                    <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 500px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                      <!-- Header -->
+                      <tr>
+                        <td style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); padding: 32px 24px; text-align: center;">
+                          <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600;">🎉 Você foi convidado!</h1>
+                        </td>
+                      </tr>
+                      <!-- Content -->
+                      <tr>
+                        <td style="padding: 32px 24px;">
+                          <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0;">
+                            Olá,
+                          </p>
+                          <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0;">
+                            Você foi convidado para fazer parte da equipe da <strong>${organizationName}</strong> como <strong>${roleName}</strong>.
+                          </p>
+                          <!-- CTA Button -->
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td align="center" style="padding: 8px 0 24px 0;">
+                                <a href="${inviteLink}" style="display: inline-block; background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: #ffffff; text-decoration: none; font-weight: 600; font-size: 16px; padding: 14px 32px; border-radius: 8px;">
+                                  Criar Minha Conta
+                                </a>
+                              </td>
+                            </tr>
+                          </table>
+                          <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0 0 16px 0;">
+                            Ou copie e cole o link abaixo no seu navegador:
+                          </p>
+                          <p style="color: #3b82f6; font-size: 12px; line-height: 18px; margin: 0 0 24px 0; word-break: break-all;">
+                            ${inviteLink}
+                          </p>
+                          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
+                          <p style="color: #9ca3af; font-size: 12px; line-height: 18px; margin: 0; text-align: center;">
+                            ⏰ Este convite expira em 7 dias.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </body>
+            </html>
+          `,
+        });
+
+        if (emailError) {
+          console.error('Error sending email:', emailError);
+        } else {
+          emailSent = true;
+          console.log('Email sent successfully to:', email);
+        }
+      } catch (emailErr) {
+        console.error('Failed to send email:', emailErr);
+      }
+    } else {
+      console.log('RESEND_API_KEY not configured, skipping email');
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -153,6 +247,7 @@ Deno.serve(async (req) => {
         role,
         inviteLink,
         expiresAt: expiresAt.toISOString(),
+        emailSent,
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
