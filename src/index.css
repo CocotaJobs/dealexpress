@@ -364,6 +364,49 @@
     }
   }
 
+  /* Staggered card animation */
+  .animate-stagger-in {
+    opacity: 0;
+    animation: stagger-in 0.5s ease-out forwards;
+    animation-delay: var(--stagger-delay, 0ms);
+  }
+
+  @keyframes stagger-in {
+    from {
+      opacity: 0;
+      transform: translateY(16px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  /* Very subtle pulse for CTA button */
+  .animate-pulse-very-subtle {
+    animation: pulse-very-subtle 3s ease-in-out infinite;
+  }
+
+  @keyframes pulse-very-subtle {
+    0%, 100% {
+      opacity: 1;
+      box-shadow: var(--shadow-primary);
+    }
+    50% {
+      opacity: 0.95;
+      box-shadow: 0 4px 20px -2px hsl(50 100% 55% / 0.45);
+    }
+  }
+
+  /* Subtle glow effect on hover */
+  .hover-glow-subtle {
+    @apply transition-all duration-300;
+  }
+
+  .hover-glow-subtle:hover {
+    box-shadow: 0 0 20px -5px hsl(var(--primary) / 0.25);
+  }
+
   /* Shimmer effect for loading states */
   .shimmer {
     @apply relative overflow-hidden;
@@ -410,5 +453,17 @@
     content: '';
     @apply absolute inset-0 pointer-events-none opacity-[0.02];
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  }
+
+  /* Reduced motion support */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-stagger-in,
+    .animate-pulse-very-subtle,
+    .animate-in,
+    .animate-fade-in {
+      animation: none !important;
+      opacity: 1 !important;
+      transform: none !important;
+    }
   }
 }

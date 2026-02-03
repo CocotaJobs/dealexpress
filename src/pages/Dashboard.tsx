@@ -32,18 +32,58 @@ import {
   Cell,
 } from 'recharts';
 import { useDashboardMetrics } from '@/hooks/useDashboardMetrics';
+import { useCountUp, formatCountUpCompactCurrency } from '@/hooks/useCountUp';
 
 interface StatCardProps {
   title: string;
   value: string;
+  rawValue?: number;
+  formatType?: 'number' | 'currency' | 'compactCurrency';
   change?: string;
   changeType?: 'positive' | 'negative' | 'neutral';
   icon: React.ElementType;
   isLoading?: boolean;
   href?: string;
+  animationDelay?: number;
 }
 
-function StatCard({ title, value, change, changeType, icon: Icon, isLoading, href }: StatCardProps) {
+function StatCard({ 
+  title, 
+  value, 
+  rawValue,
+  formatType = 'number',
+  change, 
+  changeType, 
+  icon: Icon, 
+  isLoading, 
+  href,
+  animationDelay = 0 
+}: StatCardProps) {
+  // Animate the number if rawValue is provided
+  const animatedValue = useCountUp(rawValue ?? 0, {
+    duration: 1200,
+    delay: animationDelay + 100,
+    enabled: !isLoading && rawValue !== undefined,
+  });
+
+  const getDisplayValue = () => {
+    if (rawValue === undefined) return value;
+    
+    switch (formatType) {
+      case 'currency':
+        return new Intl.NumberFormat('pt-BR', {
+          style: 'currency',
+          currency: 'BRL',
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0,
+        }).format(animatedValue);
+      case 'compactCurrency':
+        return formatCountUpCompactCurrency(animatedValue);
+      default:
+        return animatedValue.toString();
+    }
+  };
+
   if (isLoading) {
     return (
       <Card className="stat-card">
@@ -66,13 +106,13 @@ function StatCard({ title, value, change, changeType, icon: Icon, isLoading, hre
       <div className="flex items-start justify-between h-full">
         <div className="space-y-2 flex flex-col">
           <p className="text-sm font-medium text-muted-foreground">{title}</p>
-          <p className="text-3xl font-bold text-foreground">{value}</p>
+          <p className="text-3xl font-bold text-foreground tabular-nums">{getDisplayValue()}</p>
           <div className="min-h-[20px]">
             {change && (
             <div
               className={`flex items-center gap-1 text-sm font-medium ${
                 changeType === 'positive'
-                  ? 'text-green-600 dark:text-green-400'
+                  ? 'text-success'
                   : changeType === 'negative'
                   ? 'text-destructive'
                   : 'text-muted-foreground'
@@ -95,10 +135,13 @@ function StatCard({ title, value, change, changeType, icon: Icon, isLoading, hre
     </CardContent>
   );
 
+  const cardClasses = "stat-card hover-lift hover-glow-subtle cursor-pointer group animate-stagger-in";
+  const cardStyle = { '--stagger-delay': `${animationDelay}ms` } as React.CSSProperties;
+
   if (href) {
     return (
       <Link to={href} className="block">
-        <Card className="stat-card hover-lift cursor-pointer group">
+        <Card className={cardClasses} style={cardStyle}>
           {cardContent}
         </Card>
       </Link>
@@ -106,7 +149,10 @@ function StatCard({ title, value, change, changeType, icon: Icon, isLoading, hre
   }
 
   return (
-    <Card className="stat-card">
+    <Card 
+      className="stat-card hover-glow-subtle animate-stagger-in" 
+      style={cardStyle}
+    >
       {cardContent}
     </Card>
   );
@@ -118,6 +164,7 @@ export default function Dashboard() {
   const { profile } = useAuth();
   const { metrics, isLoading } = useDashboardMetrics();
   const isAdmin = profile?.role === 'admin';
+  const navigate = useNavigate();
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -137,8 +184,6 @@ export default function Dashboard() {
     }
     return formatCurrency(value);
   };
-
-  const navigate = useNavigate();
 
   const pieData = [
     { name: 'Rascunho', value: metrics.proposals.byStatus.draft, color: 'hsl(var(--muted-foreground))', status: 'draft' },
@@ -167,7 +212,10 @@ export default function Dashboard() {
               : 'Confira suas propostas e métricas'}
           </p>
         </div>
-        <Button asChild className="bg-gradient-primary shadow-primary hover:opacity-90">
+        <Button 
+          asChild 
+          className="bg-gradient-primary shadow-primary hover:opacity-90 animate-pulse-very-subtle"
+        >
           <Link to="/proposals/new">
             <PlusCircle className="w-4 h-4 mr-2" />
             Nova Proposta
@@ -180,39 +228,51 @@ export default function Dashboard() {
         <StatCard
           title="Total de Propostas"
           value={metrics.proposals.total.toString()}
+          rawValue={metrics.proposals.total}
+          formatType="number"
           change={proposalsChange !== 0 ? `${proposalsChange > 0 ? '+' : ''}${proposalsChange}% vs mês anterior` : undefined}
           changeType={proposalsChange > 0 ? 'positive' : proposalsChange < 0 ? 'negative' : 'neutral'}
           icon={FileText}
           isLoading={isLoading}
+          animationDelay={0}
         />
         <StatCard
           title="Valor Total"
           value={formatCompactCurrency(metrics.proposals.totalValue)}
+          rawValue={metrics.proposals.totalValue}
+          formatType="compactCurrency"
           change={valueChange !== 0 ? `${valueChange > 0 ? '+' : ''}${valueChange}% vs mês anterior` : undefined}
           changeType={valueChange > 0 ? 'positive' : valueChange < 0 ? 'negative' : 'neutral'}
           icon={DollarSign}
           isLoading={isLoading}
+          animationDelay={75}
         />
         <StatCard
           title={isAdmin ? 'Ticket Médio' : 'Propostas Enviadas'}
           value={isAdmin ? formatCurrency(metrics.proposals.avgValue) : metrics.proposals.byStatus.sent.toString()}
+          rawValue={isAdmin ? metrics.proposals.avgValue : metrics.proposals.byStatus.sent}
+          formatType={isAdmin ? 'currency' : 'number'}
           icon={isAdmin ? TrendingUp : FileCheck}
           isLoading={isLoading}
           href={isAdmin ? undefined : '/proposals?status=sent'}
+          animationDelay={150}
         />
         <StatCard
           title={isAdmin ? 'Usuários Ativos' : 'Rascunhos'}
           value={isAdmin ? metrics.users.active.toString() : metrics.proposals.byStatus.draft.toString()}
+          rawValue={isAdmin ? metrics.users.active : metrics.proposals.byStatus.draft}
+          formatType="number"
           icon={isAdmin ? Users : Clock}
           isLoading={isLoading}
           href={isAdmin ? '/users' : '/proposals?status=draft'}
+          animationDelay={225}
         />
       </div>
 
       {/* Charts Row */}
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Line Chart - Propostas por Período */}
-        <Card className="shadow-card lg:col-span-2">
+        <Card className="shadow-card lg:col-span-2 animate-stagger-in" style={{ '--stagger-delay': '300ms' } as React.CSSProperties}>
           <CardHeader>
             <CardTitle className="text-lg font-semibold">Propostas por Período</CardTitle>
           </CardHeader>
@@ -256,6 +316,10 @@ export default function Dashboard() {
                       strokeWidth={2}
                       dot={{ fill: 'hsl(var(--primary))', r: 4 }}
                       activeDot={{ r: 6 }}
+                      isAnimationActive={true}
+                      animationDuration={1500}
+                      animationEasing="ease-out"
+                      animationBegin={400}
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -265,7 +329,7 @@ export default function Dashboard() {
         </Card>
 
         {/* Pie Chart - Status das Propostas */}
-        <Card className="shadow-card">
+        <Card className="shadow-card animate-stagger-in" style={{ '--stagger-delay': '350ms' } as React.CSSProperties}>
           <CardHeader>
             <CardTitle className="text-lg font-semibold">Status das Propostas</CardTitle>
           </CardHeader>
@@ -292,6 +356,12 @@ export default function Dashboard() {
                         outerRadius={90}
                         paddingAngle={2}
                         dataKey="value"
+                        isAnimationActive={true}
+                        animationDuration={1000}
+                        animationBegin={500}
+                        animationEasing="ease-out"
+                        startAngle={90}
+                        endAngle={-270}
                       >
                         {pieData.map((entry, index) => (
                           <Cell 
@@ -347,7 +417,7 @@ export default function Dashboard() {
       {/* Second Charts Row */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Bar Chart - Valor por Período */}
-        <Card className="shadow-card">
+        <Card className="shadow-card animate-stagger-in" style={{ '--stagger-delay': '400ms' } as React.CSSProperties}>
           <CardHeader>
             <CardTitle className="text-lg font-semibold">Valor por Período</CardTitle>
           </CardHeader>
@@ -386,7 +456,15 @@ export default function Dashboard() {
                       }}
                       formatter={(value: number) => [formatCurrency(value), 'Valor']}
                     />
-                    <Bar dataKey="valor" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                    <Bar 
+                      dataKey="valor" 
+                      fill="hsl(var(--primary))" 
+                      radius={[4, 4, 0, 0]}
+                      isAnimationActive={true}
+                      animationDuration={1200}
+                      animationEasing="ease-out"
+                      animationBegin={500}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -395,7 +473,7 @@ export default function Dashboard() {
         </Card>
 
         {/* Bar Chart - Itens Mais Cotados */}
-        <Card className="shadow-card">
+        <Card className="shadow-card animate-stagger-in" style={{ '--stagger-delay': '450ms' } as React.CSSProperties}>
           <CardHeader>
             <CardTitle className="text-lg font-semibold">Itens Mais Cotados</CardTitle>
           </CardHeader>
@@ -414,7 +492,11 @@ export default function Dashboard() {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={metrics.topItems} layout="vertical">
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                    <XAxis 
+                      type="number" 
+                      stroke="hsl(var(--muted-foreground))" 
+                      fontSize={12} 
+                    />
                     <YAxis
                       dataKey="name"
                       type="category"
@@ -432,7 +514,15 @@ export default function Dashboard() {
                       }}
                       formatter={(value: number) => [value, 'Cotações']}
                     />
-                    <Bar dataKey="count" fill="hsl(var(--chart-2))" radius={[0, 4, 4, 0]} />
+                    <Bar 
+                      dataKey="count" 
+                      fill="hsl(var(--chart-2))" 
+                      radius={[0, 4, 4, 0]}
+                      isAnimationActive={true}
+                      animationDuration={1200}
+                      animationEasing="ease-out"
+                      animationBegin={550}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -444,12 +534,15 @@ export default function Dashboard() {
       {/* Quick Actions for Admin */}
       {isAdmin && (
         <div className="grid gap-4 md:grid-cols-3">
-          <Card className="stat-card hover-lift cursor-pointer group">
+          <Card 
+            className="stat-card hover-lift hover-glow-subtle cursor-pointer group animate-stagger-in" 
+            style={{ '--stagger-delay': '500ms' } as React.CSSProperties}
+          >
             <Link to="/items" className="block">
               <CardContent className="p-0">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-xl bg-accent flex items-center justify-center group-hover:bg-primary/10 transition-colors">
-                    <Package className="w-6 h-6 text-foreground group-hover:text-primary" />
+                    <Package className="w-6 h-6 text-foreground group-hover:text-primary transition-colors" />
                   </div>
                   <div>
                     <p className="font-semibold">Gerenciar Itens</p>
@@ -466,12 +559,15 @@ export default function Dashboard() {
             </Link>
           </Card>
 
-          <Card className="stat-card hover-lift cursor-pointer group">
+          <Card 
+            className="stat-card hover-lift hover-glow-subtle cursor-pointer group animate-stagger-in" 
+            style={{ '--stagger-delay': '550ms' } as React.CSSProperties}
+          >
             <Link to="/users" className="block">
               <CardContent className="p-0">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-xl bg-accent flex items-center justify-center group-hover:bg-primary/10 transition-colors">
-                    <Users className="w-6 h-6 text-foreground group-hover:text-primary" />
+                    <Users className="w-6 h-6 text-foreground group-hover:text-primary transition-colors" />
                   </div>
                   <div>
                     <p className="font-semibold">Gerenciar Usuários</p>
@@ -488,12 +584,15 @@ export default function Dashboard() {
             </Link>
           </Card>
 
-          <Card className="stat-card hover-lift cursor-pointer group">
+          <Card 
+            className="stat-card hover-lift hover-glow-subtle cursor-pointer group animate-stagger-in" 
+            style={{ '--stagger-delay': '600ms' } as React.CSSProperties}
+          >
             <Link to="/templates" className="block">
               <CardContent className="p-0">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-xl bg-accent flex items-center justify-center group-hover:bg-primary/10 transition-colors">
-                    <FileText className="w-6 h-6 text-foreground group-hover:text-primary" />
+                    <FileText className="w-6 h-6 text-foreground group-hover:text-primary transition-colors" />
                   </div>
                   <div>
                     <p className="font-semibold">Templates</p>
@@ -515,13 +614,16 @@ export default function Dashboard() {
       {/* Status Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">
         <Link to="/proposals?status=draft">
-          <Card className="shadow-card border-l-4 border-l-muted-foreground hover-lift cursor-pointer group">
+          <Card 
+            className="shadow-card border-l-4 border-l-muted-foreground hover-lift hover-glow-subtle cursor-pointer group animate-stagger-in" 
+            style={{ '--stagger-delay': '650ms' } as React.CSSProperties}
+          >
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <Clock className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
                 <div>
                   <p className="text-sm text-muted-foreground">Rascunhos</p>
-                  <p className="text-2xl font-bold">
+                  <p className="text-2xl font-bold tabular-nums">
                     {isLoading ? <Skeleton className="h-7 w-10 inline-block" /> : metrics.proposals.byStatus.draft}
                   </p>
                 </div>
@@ -531,13 +633,16 @@ export default function Dashboard() {
         </Link>
 
         <Link to="/proposals?status=sent">
-          <Card className="shadow-card border-l-4 border-l-primary hover-lift cursor-pointer group">
+          <Card 
+            className="shadow-card border-l-4 border-l-primary hover-lift hover-glow-subtle cursor-pointer group animate-stagger-in" 
+            style={{ '--stagger-delay': '700ms' } as React.CSSProperties}
+          >
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <Send className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
                 <div>
                   <p className="text-sm text-muted-foreground">Enviadas</p>
-                  <p className="text-2xl font-bold">
+                  <p className="text-2xl font-bold tabular-nums">
                     {isLoading ? <Skeleton className="h-7 w-10 inline-block" /> : metrics.proposals.byStatus.sent}
                   </p>
                 </div>
@@ -547,13 +652,16 @@ export default function Dashboard() {
         </Link>
 
         <Link to="/proposals?status=expired">
-          <Card className="shadow-card border-l-4 border-l-destructive hover-lift cursor-pointer group">
+          <Card 
+            className="shadow-card border-l-4 border-l-destructive hover-lift hover-glow-subtle cursor-pointer group animate-stagger-in" 
+            style={{ '--stagger-delay': '750ms' } as React.CSSProperties}
+          >
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <AlertTriangle className="w-5 h-5 text-destructive group-hover:scale-110 transition-transform" />
                 <div>
                   <p className="text-sm text-muted-foreground">Expiradas</p>
-                  <p className="text-2xl font-bold">
+                  <p className="text-2xl font-bold tabular-nums">
                     {isLoading ? <Skeleton className="h-7 w-10 inline-block" /> : metrics.proposals.byStatus.expired}
                   </p>
                 </div>
