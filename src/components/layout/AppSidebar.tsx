@@ -21,7 +21,6 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  FileText,
   LayoutDashboard,
   Package,
   Files,
@@ -32,7 +31,9 @@ import {
   LogOut,
   ChevronUp,
   MessageSquare,
+  FileText,
 } from 'lucide-react';
+import dealexpressLogo from '@/assets/dealexpress-logo.png';
 
 const adminMenuItems = [
   { title: 'Dashboard', icon: LayoutDashboard, url: '/dashboard' },
@@ -76,10 +77,8 @@ export function AppSidebar() {
     <Sidebar className="border-r border-sidebar-border sidebar-glossy">
       <SidebarHeader className="p-4">
         <Link to="/dashboard" className="flex items-center gap-3">
-          <div className="w-9 h-9 glossy-button rounded-lg flex items-center justify-center">
-            <FileText className="w-5 h-5 text-primary-foreground" />
-          </div>
-          <span className="text-lg font-bold text-sidebar-foreground">ProposalFlow</span>
+          <img src={dealexpressLogo} alt="DealExpress" className="w-9 h-9 object-contain" />
+          <span className="text-lg font-bold text-sidebar-foreground">DealExpress</span>
         </Link>
       </SidebarHeader>
 
