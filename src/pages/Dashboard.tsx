@@ -62,12 +62,13 @@ function StatCard({ title, value, change, changeType, icon: Icon, isLoading, hre
   }
 
   const cardContent = (
-    <CardContent className="p-0">
-      <div className="flex items-start justify-between">
-        <div className="space-y-2">
+    <CardContent className="p-0 h-full">
+      <div className="flex items-start justify-between h-full">
+        <div className="space-y-2 flex flex-col">
           <p className="text-sm font-medium text-muted-foreground">{title}</p>
           <p className="text-3xl font-bold text-foreground">{value}</p>
-          {change && (
+          <div className="min-h-[20px]">
+            {change && (
             <div
               className={`flex items-center gap-1 text-sm font-medium ${
                 changeType === 'positive'
@@ -85,8 +86,9 @@ function StatCard({ title, value, change, changeType, icon: Icon, isLoading, hre
               {change}
             </div>
           )}
+          </div>
         </div>
-        <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+        <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors">
           <Icon className="w-6 h-6 text-primary" />
         </div>
       </div>
@@ -182,7 +184,6 @@ export default function Dashboard() {
           changeType={proposalsChange > 0 ? 'positive' : proposalsChange < 0 ? 'negative' : 'neutral'}
           icon={FileText}
           isLoading={isLoading}
-          href="/proposals"
         />
         <StatCard
           title="Valor Total"
@@ -191,7 +192,6 @@ export default function Dashboard() {
           changeType={valueChange > 0 ? 'positive' : valueChange < 0 ? 'negative' : 'neutral'}
           icon={DollarSign}
           isLoading={isLoading}
-          href="/proposals"
         />
         <StatCard
           title={isAdmin ? 'Ticket Médio' : 'Propostas Enviadas'}
@@ -306,6 +306,13 @@ export default function Dashboard() {
                         backgroundColor: 'hsl(var(--card))',
                         border: '1px solid hsl(var(--border))',
                         borderRadius: '8px',
+                        color: 'hsl(var(--foreground))',
+                      }}
+                      itemStyle={{
+                        color: 'hsl(var(--foreground))',
+                      }}
+                      labelStyle={{
+                        color: 'hsl(var(--foreground))',
                       }}
                     />
                   </PieChart>
