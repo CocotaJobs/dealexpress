@@ -84,7 +84,6 @@ export default function Users() {
     isCreating,
     isResending,
     lastCreatedInvitation,
-    getInviteLink,
   } = useInvitations();
 
   const [search, setSearch] = useState('');
@@ -153,9 +152,14 @@ export default function Users() {
     handleCopyLink();
   };
 
-  const handleCopyInviteLink = (invite: { email: string; token: string }) => {
-    const link = getInviteLink(invite as any);
-    handleCopyLink(link);
+  // Copy invite link by regenerating it (tokens are not exposed to frontend anymore)
+  const handleCopyInviteLink = async (invite: { email: string; role: string; id: string }) => {
+    try {
+      const data = await resendInvitation(invite as any);
+      handleCopyLink(data.inviteLink);
+    } catch (error) {
+      // Error handled by mutation
+    }
   };
 
   const handleResendInvitation = async (invite: any) => {
