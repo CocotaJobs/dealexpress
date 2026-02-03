@@ -73,11 +73,11 @@ export function AppSidebar() {
   };
 
   return (
-    <Sidebar className="border-r border-sidebar-border">
+    <Sidebar className="border-r border-sidebar-border sidebar-glossy">
       <SidebarHeader className="p-4">
         <Link to="/dashboard" className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-gradient-primary rounded-lg flex items-center justify-center shadow-primary">
-            <FileText className="w-5 h-5 text-white" />
+          <div className="w-9 h-9 glossy-button rounded-lg flex items-center justify-center">
+            <FileText className="w-5 h-5 text-primary-foreground" />
           </div>
           <span className="text-lg font-bold text-sidebar-foreground">ProposalFlow</span>
         </Link>
