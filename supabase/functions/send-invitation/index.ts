@@ -151,8 +151,8 @@ Deno.serve(async (req) => {
       throw new Error('Failed to create invitation');
     }
 
-    // Generate invite link
-    const baseUrl = req.headers.get('origin') || 'https://id-preview--65f936fc-82f4-4d6f-bcc0-56fd08b7e7e8.lovable.app';
+    // Generate invite link - use origin header or PUBLIC_APP_URL env variable
+    const baseUrl = req.headers.get('origin') || Deno.env.get('PUBLIC_APP_URL') || 'https://proposalflow.app';
     const inviteLink = `${baseUrl}/register?token=${token}&email=${encodeURIComponent(email)}`;
 
     console.log('Invitation created successfully:', { email, role, inviteLink });
