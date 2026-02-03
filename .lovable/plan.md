@@ -1,33 +1,72 @@
-# ✅ Correção Concluída: Erro "Duplicate Open Tag" na Geração de PDF
 
-## Alterações Implementadas
+## Plano: Preservar Formatação (Negrito, Itálico, etc.) na Geração de PDF
 
-### 1. Nova função `mergeRunsInParagraph`
-- Substitui a função `fixFragmentedTags` por uma abordagem mais robusta
-- Consolida TODO o texto de parágrafos que contêm delimitadores de template em um único `<w:r>`
-- Preserva propriedades de parágrafo (`<w:pPr>`)
+### Problema Identificado
 
-### 2. Delimitadores únicos configurados
-- Alterado para `delimiters: { start: '{', end: '}' }`
-- Caracteres únicos são muito menos propensos a fragmentação pelo Word
+A função `mergeRunsInParagraph` consolida o texto de parágrafos fragmentados para corrigir erros de "Duplicate open tag", mas ao fazer isso, ela descarta as propriedades de formatação (`<w:rPr>`) dos runs originais.
 
-## ⚠️ Ação Necessária do Usuário
+Estrutura original do Word com negrito:
+```xml
+<w:r>
+  <w:rPr><w:b/></w:rPr>  <!-- w:b = negrito -->
+  <w:t>{cliente_nome}</w:t>
+</w:r>
+```
 
-Atualize seu template Word para usar **chaves simples**:
+Estrutura atual após o merge (perde negrito):
+```xml
+<w:r>
+  <w:t xml:space="preserve">{cliente_nome}</w:t>
+</w:r>
+```
 
-| Antes (não funciona) | Depois (funciona) |
-|---------------------|-------------------|
-| `{{cliente_nome}}` | `{cliente_nome}` |
-| `{{data}}` | `{data}` |
-| `{{valor_total}}` | `{valor_total}` |
-| `{{numero_proposta}}` | `{numero_proposta}` |
+### Solução Proposta
 
-Os loops já usam a sintaxe correta: `{#itens}...{/itens}`
+Modificar a função `mergeRunsInParagraph` para detectar e preservar as propriedades de formatação do primeiro run que contém texto, aplicando-as ao run consolidado.
 
-### Tags disponíveis com a nova sintaxe:
-- `{cliente_nome}`, `{cliente_cnpj}`, `{cliente_email}`, `{cliente_whatsapp}`, `{cliente_empresa}`, `{cliente_endereco}`
-- `{data}`, `{data_extenso}`, `{numero_proposta}`
-- `{vendedor_nome}`, `{vendedor_email}`, `{empresa_nome}`
-- `{valor_total}`, `{condicoes_pagamento}`, `{validade_proposta}`, `{validade_dias}`
-- Loop: `{#itens} {nome} - {valor} {/itens}`
+### Detalhes Técnicos
 
+#### Código Atual (linha 189):
+```javascript
+return `${pOpen}${pPr}<w:r><w:t xml:space="preserve">${fullText}</w:t></w:r></w:p>`;
+```
+
+#### Código Corrigido:
+```javascript
+// Extrair <w:rPr> do primeiro run que contém texto
+const rPrMatch = paragraph.match(/<w:r[^>]*>[\s\S]*?<w:rPr>([\s\S]*?)<\/w:rPr>[\s\S]*?<w:t/);
+const rPr = rPrMatch ? `<w:rPr>${rPrMatch[1]}</w:rPr>` : '';
+
+return `${pOpen}${pPr}<w:r>${rPr}<w:t xml:space="preserve">${fullText}</w:t></w:r></w:p>`;
+```
+
+### Arquivo a Modificar
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `supabase/functions/generate-pdf/index.ts` | Atualizar `mergeRunsInParagraph` para preservar `<w:rPr>` (propriedades de formatação) |
+
+### Lógica Detalhada
+
+A nova implementação:
+
+1. Extrai todas as propriedades de formatação (`<w:rPr>`) encontradas nos runs do parágrafo
+2. Usa as propriedades do primeiro run que possui formatação (assumindo que é a formatação dominante do placeholder)
+3. Aplica essas propriedades ao run consolidado
+
+### Resultado Esperado
+
+| Antes (sem formatação) | Depois (com formatação preservada) |
+|------------------------|-------------------------------------|
+| `<w:r><w:t>{data}</w:t></w:r>` | `<w:r><w:rPr><w:b/></w:rPr><w:t>{data}</w:t></w:r>` |
+
+### Limitação
+
+Se um placeholder tiver formatação mista (ex: `{` normal + `cliente_nome` em negrito + `}` normal), a função aplicará a formatação do primeiro run a todo o texto consolidado. Na prática, isso funciona bem porque a maioria dos usuários formata o placeholder inteiro de forma uniforme.
+
+### Ação Necessária do Usuário
+
+Após a implementação:
+1. Não é necessário alterar o template
+2. Gere o PDF novamente
+3. Verifique se a formatação (negrito, itálico) está preservada
