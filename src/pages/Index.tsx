@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { FileText, ArrowRight, Zap, Shield, MessageSquare, BarChart3 } from 'lucide-react';
+import { ArrowRight, Zap, Shield, MessageSquare, BarChart3 } from 'lucide-react';
+import dealexpressLogo from '@/assets/dealexpress-logo.png';
 
 const features = [
   {
@@ -29,13 +30,11 @@ export default function Index() {
   return (
     <div className="min-h-screen bg-gradient-surface">
       {/* Header */}
-      <header className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-50">
+      <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-6 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-gradient-primary rounded-lg flex items-center justify-center shadow-primary">
-              <FileText className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-xl font-bold">ProposalFlow</span>
+            <img src={dealexpressLogo} alt="DealExpress" className="w-9 h-9 object-contain" />
+            <span className="text-xl font-bold">DealExpress</span>
           </Link>
           <div className="flex items-center gap-4">
             <Button variant="ghost" asChild>
@@ -67,7 +66,7 @@ export default function Index() {
               não em horas.
             </h1>
             <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-              ProposalFlow é a plataforma completa para criar, gerenciar e enviar propostas
+              DealExpress é a plataforma completa para criar, gerenciar e enviar propostas
               comerciais profissionais via WhatsApp. Simples, rápido e eficiente.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -93,7 +92,7 @@ export default function Index() {
       </section>
 
       {/* Features */}
-      <section className="py-24 bg-white">
+      <section className="py-24 bg-card">
         <div className="container mx-auto px-6">
           <div className="text-center mb-16">
             <h2 className="text-3xl font-bold mb-4">Tudo que você precisa</h2>
@@ -122,13 +121,13 @@ export default function Index() {
       {/* CTA */}
       <section className="py-24">
         <div className="container mx-auto px-6">
-          <div className="max-w-4xl mx-auto bg-gradient-hero rounded-3xl p-12 text-center text-white relative overflow-hidden">
+          <div className="max-w-4xl mx-auto bg-gradient-hero rounded-3xl p-12 text-center text-primary-foreground relative overflow-hidden">
             <div className="absolute inset-0 pattern-dots opacity-10" />
             <div className="relative">
               <h2 className="text-3xl md:text-4xl font-bold mb-4">
                 Pronto para acelerar suas vendas?
               </h2>
-              <p className="text-lg text-white/80 mb-8 max-w-xl mx-auto">
+              <p className="text-lg opacity-80 mb-8 max-w-xl mx-auto">
                 Junte-se a centenas de empresas que já automatizaram suas propostas comerciais.
               </p>
               <Button
@@ -148,17 +147,15 @@ export default function Index() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t py-12 bg-white">
+      <footer className="border-t py-12 bg-card">
         <div className="container mx-auto px-6">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center">
-                <FileText className="w-4 h-4 text-white" />
-              </div>
-              <span className="font-bold">ProposalFlow</span>
+              <img src={dealexpressLogo} alt="DealExpress" className="w-8 h-8 object-contain" />
+              <span className="font-bold">DealExpress</span>
             </div>
             <p className="text-sm text-muted-foreground">
-              © 2025 ProposalFlow. Todos os direitos reservados.
+              © 2025 DealExpress. Todos os direitos reservados.
             </p>
           </div>
         </div>

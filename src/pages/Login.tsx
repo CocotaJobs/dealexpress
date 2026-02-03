@@ -5,7 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
-import { FileText, Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react';
+import dealexpressLogo from '@/assets/dealexpress-logo.png';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -64,10 +65,8 @@ export default function Login() {
         <div className="absolute inset-0" style={{ background: 'var(--gradient-glossy)' }} />
         <div className="relative z-10 flex flex-col justify-between p-12 text-primary-foreground">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-foreground/20 backdrop-blur-sm rounded-xl flex items-center justify-center border border-foreground/10">
-              <FileText className="w-6 h-6" />
-            </div>
-            <span className="text-2xl font-bold">ProposalFlow</span>
+            <img src={dealexpressLogo} alt="DealExpress" className="w-10 h-10 object-contain" />
+            <span className="text-2xl font-bold">DealExpress</span>
           </div>
 
           <div className="space-y-6">
@@ -107,10 +106,8 @@ export default function Login() {
         <div className="w-full max-w-md">
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center justify-center gap-3 mb-8">
-            <div className="w-10 h-10 glossy-button rounded-xl flex items-center justify-center">
-              <FileText className="w-6 h-6 text-primary-foreground" />
-            </div>
-            <span className="text-2xl font-bold text-foreground">ProposalFlow</span>
+            <img src={dealexpressLogo} alt="DealExpress" className="w-10 h-10 object-contain" />
+            <span className="text-2xl font-bold text-foreground">DealExpress</span>
           </div>
 
           <Card className="border-0 shadow-xl">

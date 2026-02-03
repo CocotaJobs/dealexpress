@@ -5,9 +5,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { FileText, Eye, EyeOff, ArrowRight, Loader2, CheckCircle2, Users } from 'lucide-react';
+import { Eye, EyeOff, ArrowRight, Loader2, CheckCircle2, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import dealexpressLogo from '@/assets/dealexpress-logo.png';
 
 interface InvitationInfo {
   email: string;
@@ -216,10 +217,8 @@ export default function Register() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex items-center justify-center gap-3 mb-8">
-          <div className="w-10 h-10 bg-gradient-primary rounded-xl flex items-center justify-center shadow-primary">
-            <FileText className="w-6 h-6 text-white" />
-          </div>
-          <span className="text-2xl font-bold text-foreground">ProposalFlow</span>
+          <img src={dealexpressLogo} alt="DealExpress" className="w-10 h-10 object-contain" />
+          <span className="text-2xl font-bold text-foreground">DealExpress</span>
         </div>
 
         {/* Invitation Info Card */}
