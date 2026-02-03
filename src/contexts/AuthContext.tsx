@@ -11,7 +11,6 @@ export interface UserProfile {
   role: UserRole;
   organization_id: string;
   whatsapp_connected: boolean;
-  whatsapp_session_id?: string;
   avatar_url?: string;
   created_at: string;
 }
@@ -38,10 +37,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchProfile = async (userId: string) => {
     try {
-      // Fetch profile
+      // Fetch profile - only select non-sensitive fields (excludes whatsapp_session_id)
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, email, name, organization_id, whatsapp_connected, avatar_url, created_at')
         .eq('id', userId)
         .maybeSingle();
 
@@ -72,7 +71,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role: (roleData?.role as UserRole) || 'vendor',
         organization_id: profileData.organization_id || '',
         whatsapp_connected: profileData.whatsapp_connected || false,
-        whatsapp_session_id: profileData.whatsapp_session_id || undefined,
         avatar_url: profileData.avatar_url || undefined,
         created_at: profileData.created_at,
       };
