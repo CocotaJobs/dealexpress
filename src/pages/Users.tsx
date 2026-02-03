@@ -82,7 +82,9 @@ export default function Users() {
     cancelInvitation,
     resendInvitation,
     isCreating,
+    isResending,
     lastCreatedInvitation,
+    getInviteLink,
   } = useInvitations();
 
   const [search, setSearch] = useState('');
@@ -90,6 +92,7 @@ export default function Users() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'vendor'>('vendor');
   const [showInviteLink, setShowInviteLink] = useState(false);
+  const [resendLinkData, setResendLinkData] = useState<{ email: string; inviteLink: string; expiresAt: string } | null>(null);
   const [confirmAction, setConfirmAction] = useState<{
     type: 'toggle' | 'role';
     userId: string;
@@ -135,13 +138,36 @@ export default function Users() {
     );
   };
 
-  const handleCopyLink = () => {
-    if (lastCreatedInvitation?.inviteLink) {
-      navigator.clipboard.writeText(lastCreatedInvitation.inviteLink);
+  const handleCopyLink = (link?: string) => {
+    const linkToCopy = link || lastCreatedInvitation?.inviteLink;
+    if (linkToCopy) {
+      navigator.clipboard.writeText(linkToCopy);
       toast({
         title: 'Link copiado!',
         description: 'O link de convite foi copiado para a área de transferência.',
       });
+    }
+  };
+
+  const handleCopyCreatedLink = () => {
+    handleCopyLink();
+  };
+
+  const handleCopyInviteLink = (invite: { email: string; token: string }) => {
+    const link = getInviteLink(invite as any);
+    handleCopyLink(link);
+  };
+
+  const handleResendInvitation = async (invite: any) => {
+    try {
+      const data = await resendInvitation(invite);
+      setResendLinkData({
+        email: data.email,
+        inviteLink: data.inviteLink,
+        expiresAt: data.expiresAt,
+      });
+    } catch (error) {
+      // Error handled by mutation
     }
   };
 
@@ -222,7 +248,7 @@ export default function Users() {
                         readOnly
                         className="text-xs"
                       />
-                      <Button onClick={handleCopyLink} size="icon" variant="outline">
+                      <Button onClick={handleCopyCreatedLink} size="icon" variant="outline">
                         <Copy className="w-4 h-4" />
                       </Button>
                     </div>
@@ -549,7 +575,7 @@ export default function Users() {
                 {pendingInvitations.map((invite) => (
                   <div
                     key={invite.id}
-                    className="flex items-center justify-between p-4 rounded-lg border bg-muted/30"
+                    className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-lg border bg-muted/30 gap-3"
                   >
                     <div>
                       <p className="font-medium">{invite.email}</p>
@@ -558,13 +584,26 @@ export default function Users() {
                         {formatDate(invite.expires_at)}
                       </p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => resendInvitation(invite)}
+                        onClick={() => handleCopyInviteLink(invite)}
                       >
-                        <RefreshCw className="w-4 h-4 mr-1" />
+                        <Copy className="w-4 h-4 mr-1" />
+                        Copiar Link
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleResendInvitation(invite)}
+                        disabled={isResending}
+                      >
+                        {isResending ? (
+                          <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-4 h-4 mr-1" />
+                        )}
                         Reenviar
                       </Button>
                       <Button
@@ -584,6 +623,45 @@ export default function Users() {
           </CardContent>
         </Card>
       )}
+
+      {/* Resend Link Dialog */}
+      <Dialog open={!!resendLinkData} onOpenChange={(open) => !open && setResendLinkData(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Convite Reenviado!</DialogTitle>
+            <DialogDescription>
+              Um email foi enviado para {resendLinkData?.email}. Você também pode copiar o link abaixo.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="p-4 bg-muted rounded-lg">
+              <p className="text-sm font-medium mb-2">Link de convite:</p>
+              <div className="flex gap-2">
+                <Input
+                  value={resendLinkData?.inviteLink || ''}
+                  readOnly
+                  className="text-xs"
+                />
+                <Button 
+                  onClick={() => handleCopyLink(resendLinkData?.inviteLink)} 
+                  size="icon" 
+                  variant="outline"
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
+              {resendLinkData?.expiresAt && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Expira em: {formatDate(resendLinkData.expiresAt)}
+                </p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setResendLinkData(null)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Confirmation Dialog */}
       <AlertDialog open={!!confirmAction} onOpenChange={(open) => !open && setConfirmAction(null)}>
