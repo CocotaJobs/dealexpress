@@ -1,11 +1,22 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { FileText, Eye, EyeOff, ArrowRight, Loader2, CheckCircle2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { FileText, Eye, EyeOff, ArrowRight, Loader2, CheckCircle2, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+
+interface InvitationInfo {
+  email: string;
+  role: 'admin' | 'vendor';
+  organizationName: string;
+  expiresAt: string;
+  isValid: boolean;
+  errorMessage?: string;
+}
 
 export default function Register() {
   const [searchParams] = useSearchParams();
@@ -18,10 +29,110 @@ export default function Register() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingInvite, setIsLoadingInvite] = useState(!!inviteToken);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [invitationInfo, setInvitationInfo] = useState<InvitationInfo | null>(null);
   const navigate = useNavigate();
   const { signUp } = useAuth();
+
+  // Fetch invitation info if token is present
+  useEffect(() => {
+    const fetchInvitationInfo = async () => {
+      if (!inviteToken) return;
+
+      setIsLoadingInvite(true);
+      try {
+        const { data: invitation, error: inviteError } = await supabase
+          .from('invitations')
+          .select(`
+            email,
+            role,
+            expires_at,
+            status,
+            organization_id,
+            organizations (name)
+          `)
+          .eq('token', inviteToken)
+          .maybeSingle();
+
+        if (inviteError) {
+          console.error('Error fetching invitation:', inviteError);
+          setInvitationInfo({
+            email: inviteEmail,
+            role: 'vendor',
+            organizationName: '',
+            expiresAt: '',
+            isValid: false,
+            errorMessage: 'Erro ao verificar convite',
+          });
+          return;
+        }
+
+        if (!invitation) {
+          setInvitationInfo({
+            email: inviteEmail,
+            role: 'vendor',
+            organizationName: '',
+            expiresAt: '',
+            isValid: false,
+            errorMessage: 'Convite não encontrado ou inválido',
+          });
+          return;
+        }
+
+        if (invitation.status !== 'pending') {
+          setInvitationInfo({
+            email: invitation.email,
+            role: invitation.role,
+            organizationName: (invitation.organizations as { name: string })?.name || '',
+            expiresAt: invitation.expires_at,
+            isValid: false,
+            errorMessage: invitation.status === 'accepted' 
+              ? 'Este convite já foi utilizado' 
+              : 'Este convite expirou',
+          });
+          return;
+        }
+
+        const expiresAt = new Date(invitation.expires_at);
+        if (expiresAt < new Date()) {
+          setInvitationInfo({
+            email: invitation.email,
+            role: invitation.role,
+            organizationName: (invitation.organizations as { name: string })?.name || '',
+            expiresAt: invitation.expires_at,
+            isValid: false,
+            errorMessage: 'Este convite expirou',
+          });
+          return;
+        }
+
+        setInvitationInfo({
+          email: invitation.email,
+          role: invitation.role,
+          organizationName: (invitation.organizations as { name: string })?.name || '',
+          expiresAt: invitation.expires_at,
+          isValid: true,
+        });
+        setEmail(invitation.email);
+      } catch (err) {
+        console.error('Error fetching invitation:', err);
+        setInvitationInfo({
+          email: inviteEmail,
+          role: 'vendor',
+          organizationName: '',
+          expiresAt: '',
+          isValid: false,
+          errorMessage: 'Erro ao verificar convite',
+        });
+      } finally {
+        setIsLoadingInvite(false);
+      }
+    };
+
+    fetchInvitationInfo();
+  }, [inviteToken, inviteEmail]);
 
   const passwordRequirements = [
     { label: 'Mínimo 8 caracteres', met: password.length >= 8 },
@@ -32,6 +143,12 @@ export default function Register() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    // Check if invitation is valid when token is present
+    if (inviteToken && invitationInfo && !invitationInfo.isValid) {
+      setError(invitationInfo.errorMessage || 'Convite inválido');
+      return;
+    }
 
     if (password !== confirmPassword) {
       setError('As senhas não coincidem.');
@@ -63,6 +180,14 @@ export default function Register() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Intl.DateTimeFormat('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(new Date(dateString));
   };
 
   if (success) {
@@ -97,12 +222,59 @@ export default function Register() {
           <span className="text-2xl font-bold text-foreground">ProposalFlow</span>
         </div>
 
+        {/* Invitation Info Card */}
+        {isLoadingInvite ? (
+          <Card className="border-0 shadow-xl mb-6">
+            <CardContent className="py-6 flex items-center justify-center">
+              <Loader2 className="w-5 h-5 animate-spin text-primary mr-2" />
+              <span className="text-muted-foreground">Verificando convite...</span>
+            </CardContent>
+          </Card>
+        ) : inviteToken && invitationInfo ? (
+          <Card className={`border-0 shadow-xl mb-6 ${!invitationInfo.isValid ? 'border-destructive/50' : 'border-primary/50'}`}>
+            <CardContent className="py-4">
+              <div className="flex items-start gap-3">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${invitationInfo.isValid ? 'bg-primary/10' : 'bg-destructive/10'}`}>
+                  <Users className={`w-5 h-5 ${invitationInfo.isValid ? 'text-primary' : 'text-destructive'}`} />
+                </div>
+                <div className="flex-1">
+                  {invitationInfo.isValid ? (
+                    <>
+                      <p className="font-medium text-foreground">
+                        Você foi convidado para fazer parte de
+                      </p>
+                      <p className="text-lg font-bold text-primary">
+                        {invitationInfo.organizationName}
+                      </p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <Badge variant="outline">
+                          {invitationInfo.role === 'admin' ? 'Administrador' : 'Vendedor'}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          Expira em {formatDate(invitationInfo.expiresAt)}
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-medium text-destructive">Convite Inválido</p>
+                      <p className="text-sm text-muted-foreground">
+                        {invitationInfo.errorMessage}
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
         <Card className="border-0 shadow-xl">
           <CardHeader className="space-y-1 pb-6">
             <CardTitle className="text-2xl font-bold">Criar sua conta</CardTitle>
             <CardDescription>
-              {inviteToken
-                ? 'Você foi convidado para fazer parte da equipe'
+              {inviteToken && invitationInfo?.isValid
+                ? 'Complete seu cadastro para acessar a organização'
                 : 'Preencha os dados abaixo para criar sua conta'}
             </CardDescription>
           </CardHeader>
@@ -136,9 +308,14 @@ export default function Register() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  disabled={!!inviteEmail}
+                  disabled={!!inviteToken && invitationInfo?.isValid}
                   className="h-11 input-focus disabled:bg-muted"
                 />
+                {inviteToken && invitationInfo?.isValid && (
+                  <p className="text-xs text-muted-foreground">
+                    O email foi definido pelo convite e não pode ser alterado
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -198,7 +375,7 @@ export default function Register() {
               <Button
                 type="submit"
                 className="w-full h-11 bg-gradient-primary shadow-primary hover:opacity-90 transition-opacity"
-                disabled={isLoading}
+                disabled={isLoading || (inviteToken && invitationInfo && !invitationInfo.isValid)}
               >
                 {isLoading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
