@@ -890,11 +890,14 @@ Deno.serve(async (req) => {
         if (docxUploadError) {
           console.error('Error uploading processed DOCX:', docxUploadError);
         } else {
-          const { data: docxUrlData } = supabaseAdmin
+          // Use signed URL instead of public URL (1 hour expiry)
+          const { data: docxUrlData, error: signedUrlError } = await supabaseAdmin
             .storage
             .from('generated-pdfs')
-            .getPublicUrl(docxFileName);
-          docxUrl = docxUrlData.publicUrl;
+            .createSignedUrl(docxFileName, 3600);
+          if (!signedUrlError && docxUrlData) {
+            docxUrl = docxUrlData.signedUrl;
+          }
           console.log('Processed DOCX saved to storage:', docxFileName);
         }
 
@@ -962,16 +965,25 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get public URL
-    const { data: urlData } = supabaseAdmin
+    // Get signed URL (1 hour expiry) instead of public URL for security
+    const { data: urlData, error: signedUrlError } = await supabaseAdmin
       .storage
       .from('generated-pdfs')
-      .getPublicUrl(pdfFileName);
+      .createSignedUrl(pdfFileName, 3600);
 
-    // Update proposal with PDF URL
+    if (signedUrlError || !urlData) {
+      console.error('Error creating signed URL:', signedUrlError);
+      return new Response(
+        JSON.stringify({ error: 'Falha ao gerar URL do PDF' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Store the file path (not URL) in database - we'll generate fresh signed URLs on demand
+    const pdfPath = pdfFileName;
     await supabaseAdmin
       .from('proposals')
-      .update({ pdf_url: urlData.publicUrl })
+      .update({ pdf_url: pdfPath })
       .eq('id', proposalId);
 
     console.log(`PDF generated successfully: ${pdfFileName} (custom template: ${usedCustomTemplate})`);
@@ -979,7 +991,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        pdfUrl: urlData.publicUrl,
+        pdfUrl: urlData.signedUrl,
         docxUrl: docxUrl,
         fileName: `${proposal.proposal_number}.pdf`,
         usedCustomTemplate,
