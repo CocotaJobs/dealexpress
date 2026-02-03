@@ -1,178 +1,127 @@
 
-# Revisão Completa da Plataforma ProposalFlow
 
-## Resumo Executivo
+# Plano de Correção de Segurança
 
-Após análise completa do código, banco de dados, segurança e funcionalidades, a plataforma está **quase pronta para produção**, mas possui alguns pontos que precisam de atenção antes do lançamento.
+## Resumo dos Problemas Identificados
 
----
+Existem **3 erros de segurança de nível "error"** que precisam ser corrigidos:
 
-## 1. PONTOS POSITIVOS (O Que Está Bom)
+1. **profiles_table_public_exposure**: A tabela `profiles` está acessível a usuários não autenticados porque a política SELECT tem `roles:{public}` em vez de `{authenticated}`.
 
-### Arquitetura e Código
-- Estrutura bem organizada com separação clara de responsabilidades
-- Hooks customizados (`useProposals`, `useItems`, `useDashboardMetrics`) bem implementados
-- Componentes UI reutilizáveis com Shadcn/UI
-- Autenticação completa com Supabase Auth
-- Sistema de temas (claro/escuro) funcionando
-- Animações suaves e profissionais no dashboard
+2. **invitations_safe_missing_rls**: A view `invitations_safe` não tem políticas RLS próprias e a tabela base `invitations` tem a mesma vulnerabilidade com `roles:{public}`.
 
-### Funcionalidades
-- Fluxo completo de criação, edição e visualização de propostas
-- Geração de PDF com templates personalizáveis
-- Sistema de convites por email funcionando
-- Integração com WhatsApp via Evolution API
-- Dashboard com métricas reais e gráficos interativos
-- Importação de itens via Excel
-
-### Banco de Dados
-- RLS (Row Level Security) habilitado em todas as tabelas
-- Políticas de acesso por organização implementadas
-- Triggers para geração automática de número da proposta
-- Funções auxiliares (`get_user_organization_id`, `has_role`, `is_admin`)
+3. **proposals_table_public_exposure**: A tabela `proposals` tem políticas RLS, mas a SELECT policy também precisa ter `roles:{authenticated}` para garantir que usuários anônimos não possam consultá-la.
 
 ---
 
-## 2. PROBLEMAS ENCONTRADOS
+## Solução Proposta
 
-### Erros no Console (Prioridade Alta)
-**Warning React forwardRef**: O componente `StatCard` está recebendo ref incorretamente quando usado com `Link`.
+### Parte 1: Correção das Políticas RLS no Banco de Dados
 
+Vou criar uma migração SQL que:
+
+1. **Recria as políticas SELECT** das tabelas `profiles`, `invitations` e `proposals` com `TO authenticated` explicitamente, garantindo que somente usuários autenticados possam ler dados.
+
+2. **Remove o acesso a `anon`** de todas as tabelas sensíveis.
+
+```text
++------------------+     +------------------+     +------------------+
+|    profiles      |     |   invitations    |     |    proposals     |
++------------------+     +------------------+     +------------------+
+| SELECT: public   | --> | SELECT: public   | --> | SELECT: auth     |
+| (VULNERÁVEL!)    |     | (VULNERÁVEL!)    |     | (OK, mas reforçar|
++------------------+     +------------------+     +------------------+
+         |                        |                        |
+         v                        v                        v
++------------------+     +------------------+     +------------------+
+| SELECT: auth     |     | SELECT: auth     |     | SELECT: auth     |
+| (CORRIGIDO)      |     | (CORRIGIDO)      |     | (REFORÇADO)      |
++------------------+     +------------------+     +------------------+
 ```
-Warning: Function components cannot be given refs.
-Check the render method of `Dashboard`.
-```
 
-**Correção necessária**: Ajustar o componente StatCard para usar `forwardRef` quando clicável.
+### Parte 2: Atualização do Código Frontend
 
-### Alertas de Segurança (Prioridade Alta)
+1. **AuthContext.tsx**: Atualizar para buscar dados do usuário usando a RPC `get_own_whatsapp_session()` para dados sensíveis de WhatsApp, e a view `profiles_safe` para dados básicos do perfil (mas mantendo a tabela `profiles` para o próprio usuário já que RLS permite).
 
-| Severidade | Problema | Descrição |
-|------------|----------|-----------|
-| ERROR | Dados de usuário expostos | Tabela `profiles` acessível a todos da organização com emails e session_ids |
-| ERROR | Dados de clientes expostos | Tabela `proposals` com emails, WhatsApp, CNPJ visíveis para todos |
-| ERROR | Tokens de convite expostos | Tabela `invitations` permite ver tokens de convite |
-| WARN | Session ID WhatsApp | Campo `whatsapp_session_id` visível para toda organização |
-| WARN | Preços e descontos expostos | Vendedores podem ver estratégias de precificação |
-| INFO | File paths de templates | Caminhos de arquivos visíveis no banco |
+2. **useProposals.ts**: Continuar buscando nome do vendedor da tabela `profiles` (já que é apenas `id, name` e RLS permite para a organização).
 
-### Código que Precisa de Ajuste
+3. **ViewProposal.tsx**: Mesmo caso - já busca apenas `id, name`.
 
-**1. StatCard com Link (Dashboard.tsx)**
-O componente não usa `forwardRef`, causando warnings no console quando envolvido por `Link`.
-
-**2. Variáveis de ambiente CORS**
-A edge function `send-invitation` tem URL hardcoded:
-```typescript
-const baseUrl = req.headers.get('origin') || 'https://id-preview--65f936fc-82f4-4d6f-bcc0-56fd08b7e7e8.lovable.app';
-```
-Isso precisa ser ajustado para produção.
+4. **useDashboardMetrics.ts**: Verificar se está buscando apenas contagens.
 
 ---
 
-## 3. MELHORIAS RECOMENDADAS
+## Detalhes Técnicos
 
-### Para Produção Imediata
-
-| Item | Esforço | Impacto |
-|------|---------|---------|
-| Corrigir warning de forwardRef | Baixo | Médio |
-| Remover URL hardcoded da edge function | Baixo | Alto |
-| Criar views seguras para dados sensíveis | Médio | Alto |
-| Adicionar tratamento de erros em edge functions | Baixo | Médio |
-
-### Melhorias Futuras
-
-| Item | Esforço | Impacto |
-|------|---------|---------|
-| Paginação nas listagens de propostas/itens | Médio | Alto |
-| Cache de queries com React Query | Baixo | Médio |
-| Testes automatizados (unit/e2e) | Alto | Alto |
-| Logs de auditoria | Médio | Médio |
-| Rate limiting nas edge functions | Médio | Alto |
-
----
-
-## 4. CHECKLIST DE PRÉ-PRODUÇÃO
-
-### Obrigatório
-
-- [ ] Corrigir warning de forwardRef no StatCard
-- [ ] Remover URL hardcoded na edge function send-invitation
-- [ ] Verificar se RESEND_API_KEY está configurado para emails reais
-- [ ] Verificar se PDFCO_API_KEY está configurado
-- [ ] Verificar se EVOLUTION_API_URL e KEY estão configurados para WhatsApp
-- [ ] Testar fluxo completo de registro via convite
-- [ ] Testar geração e envio de PDF via WhatsApp
-
-### Recomendado
-
-- [ ] Criar views para ocultar campos sensíveis (tokens, session_ids)
-- [ ] Adicionar monitoramento de erros (Sentry ou similar)
-- [ ] Configurar backup do banco de dados
-- [ ] Testar em dispositivos móveis
-
-### Segurança (Avaliar Necessidade)
-
-- [ ] Restringir visibilidade de tokens de convite apenas para admins
-- [ ] Criar view pública para profiles sem whatsapp_session_id
-- [ ] Implementar rate limiting em endpoints críticos
-
----
-
-## 5. DETALHES TÉCNICOS DAS CORREÇÕES
-
-### Correção 1: Warning forwardRef
-
-O componente `StatCard` quando usado com `Link` precisa de `forwardRef`:
-
-```typescript
-const StatCard = React.forwardRef<HTMLDivElement, StatCardProps>(
-  ({ title, value, ... }, ref) => {
-    // ...
-  }
-);
-StatCard.displayName = 'StatCard';
-```
-
-### Correção 2: URL Hardcoded
-
-Na edge function `send-invitation`, substituir:
-
-```typescript
-// De:
-const baseUrl = req.headers.get('origin') || 'https://id-preview--...';
-
-// Para:
-const baseUrl = req.headers.get('origin') || Deno.env.get('PUBLIC_APP_URL') || 'https://seu-dominio.com';
-```
-
-### Correção 3: Views para Dados Sensíveis (Opcional)
-
-Criar view para invitations sem token:
+### Migração SQL
 
 ```sql
-CREATE VIEW public.invitations_safe AS
-SELECT id, email, role, organization_id, status, expires_at, created_at
-FROM public.invitations;
--- Token excluído propositalmente
+-- 1. Fix profiles SELECT policy - change from public to authenticated
+DROP POLICY IF EXISTS "Users can view profiles in their organization" ON public.profiles;
+CREATE POLICY "Users can view profiles in their organization"
+  ON public.profiles
+  FOR SELECT
+  TO authenticated
+  USING (organization_id = get_user_organization_id());
+
+-- 2. Fix invitations SELECT policy - change from public to authenticated  
+DROP POLICY IF EXISTS "Only admins can view invitations" ON public.invitations;
+CREATE POLICY "Only admins can view invitations"
+  ON public.invitations
+  FOR SELECT
+  TO authenticated
+  USING (is_admin() AND (organization_id = get_user_organization_id()));
+
+-- 3. Reinforce proposals policies (already authenticated but let's be explicit)
+DROP POLICY IF EXISTS "Users can view proposals" ON public.proposals;
+CREATE POLICY "Users can view proposals"
+  ON public.proposals
+  FOR SELECT
+  TO authenticated
+  USING (
+    (organization_id = get_user_organization_id()) 
+    AND (is_admin() OR (created_by = auth.uid()))
+  );
 ```
+
+### Modificação do AuthContext.tsx
+
+O código atual busca `whatsapp_session_id` diretamente:
+
+```typescript
+// ANTES (vulnerável)
+const { data: profileData } = await supabase
+  .from('profiles')
+  .select('*')  // Inclui whatsapp_session_id!
+  .eq('id', userId)
+```
+
+Vou modificar para buscar apenas os campos necessários e usar a RPC para dados sensíveis de WhatsApp:
+
+```typescript
+// DEPOIS (seguro)
+const { data: profileData } = await supabase
+  .from('profiles')
+  .select('id, email, name, organization_id, whatsapp_connected, avatar_url, created_at')
+  .eq('id', userId)
+```
+
+Nota: O `whatsapp_session_id` não é usado no frontend (apenas nas Edge Functions), então pode ser removido do UserProfile interface.
 
 ---
 
-## 6. CONCLUSÃO
+## Arquivos a Modificar
 
-A plataforma está **95% pronta para produção**. Os ajustes necessários são:
+1. **Nova migração SQL** - Corrigir políticas RLS
+2. **src/contexts/AuthContext.tsx** - Remover busca de `whatsapp_session_id`
 
-1. **Obrigatórios** (30 min de trabalho):
-   - Corrigir warning de forwardRef
-   - Remover URL hardcoded
+---
 
-2. **Recomendados** (1-2 horas):
-   - Criar views seguras para dados sensíveis
-   - Verificar todas as secrets configuradas
+## Validação
 
-3. **Opcionais** (futuro):
-   - Paginação, cache, testes, monitoramento
+Após implementação:
+- Usuários não autenticados não poderão consultar nenhuma tabela
+- A view `invitations_safe` herdará as políticas da tabela base (que agora exige autenticação)
+- O campo `whatsapp_session_id` não será mais exposto no frontend
+- Todas as funcionalidades continuarão funcionando normalmente
 
-**Veredicto**: Com as correções obrigatórias, a plataforma pode ir para produção com segurança.
