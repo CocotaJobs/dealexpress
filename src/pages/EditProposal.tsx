@@ -276,7 +276,10 @@ export default function EditProposal() {
     setIsSaving(false);
 
     if (result.data) {
-      navigate(`/proposals/${id}`);
+      toast({
+        title: 'Proposta salva!',
+        description: 'As alterações foram salvas com sucesso.',
+      });
     }
   };
 
