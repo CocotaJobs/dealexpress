@@ -50,27 +50,32 @@ const formatCurrency = (value: number): string => {
   }).format(value);
 };
 
-// Format date helper
+// Format date helper with Brasília timezone
 const formatDate = (dateStr: string): string => {
   const date = new Date(dateStr);
-  return date.toLocaleDateString('pt-BR', {
+  return new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
-  });
+    timeZone: 'America/Sao_Paulo',
+  }).format(date);
 };
 
-// Format date extended (e.g., "29 de Janeiro de 2026")
+// Format date extended (e.g., "29 de Janeiro de 2026") with Brasília timezone
 const formatDateExtended = (): string => {
   const months = [
     'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
     'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
   ];
+  
   const now = new Date();
-  const day = now.getDate();
-  const month = months[now.getMonth()];
-  const year = now.getFullYear();
-  return `${day} de ${month} de ${year}`;
+  const options: Intl.DateTimeFormatOptions = { timeZone: 'America/Sao_Paulo' };
+  
+  const day = new Intl.DateTimeFormat('pt-BR', { ...options, day: 'numeric' }).format(now);
+  const monthIndex = parseInt(new Intl.DateTimeFormat('pt-BR', { ...options, month: 'numeric' }).format(now)) - 1;
+  const year = new Intl.DateTimeFormat('pt-BR', { ...options, year: 'numeric' }).format(now);
+  
+  return `${day} de ${months[monthIndex]} de ${year}`;
 };
 
 // Generate items table as formatted text for template

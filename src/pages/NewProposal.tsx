@@ -59,6 +59,7 @@ export default function NewProposal() {
   const [isSaving, setIsSaving] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
+  const [createdProposalId, setCreatedProposalId] = useState<string | null>(null);
 
   // Client data
   const [clientName, setClientName] = useState('');
@@ -189,6 +190,12 @@ export default function NewProposal() {
   const handleSaveDraft = async () => {
     if (!validateForm()) return;
 
+    // If proposal was already created (e.g., via preview), redirect to edit page
+    if (createdProposalId) {
+      navigate(`/proposals/${createdProposalId}/edit`);
+      return;
+    }
+
     setIsSaving(true);
     const result = await createProposal(
       {
@@ -207,7 +214,8 @@ export default function NewProposal() {
     setIsSaving(false);
 
     if (result.data) {
-      navigate('/proposals');
+      // Navigate to edit page instead of proposals list
+      navigate(`/proposals/${result.data.id}/edit`);
     }
   };
 
@@ -253,6 +261,8 @@ export default function NewProposal() {
     );
 
     if (result.data) {
+      // Mark as created to prevent duplicates
+      setCreatedProposalId(result.data.id);
       // Generate and preview PDF using the pre-opened window
       await previewPdf(result.data.id, previewWindow);
     } else {
