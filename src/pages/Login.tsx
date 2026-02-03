@@ -60,10 +60,11 @@ export default function Login() {
     <div className="min-h-screen flex">
       {/* Left side - Branding */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-hero relative overflow-hidden">
-        <div className="absolute inset-0 pattern-dots opacity-10" />
-        <div className="relative z-10 flex flex-col justify-between p-12 text-white">
+        <div className="absolute inset-0 pattern-dots opacity-20" />
+        <div className="absolute inset-0" style={{ background: 'var(--gradient-glossy)' }} />
+        <div className="relative z-10 flex flex-col justify-between p-12 text-primary-foreground">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+            <div className="w-10 h-10 bg-foreground/20 backdrop-blur-sm rounded-xl flex items-center justify-center border border-foreground/10">
               <FileText className="w-6 h-6" />
             </div>
             <span className="text-2xl font-bold">ProposalFlow</span>
@@ -72,15 +73,15 @@ export default function Login() {
           <div className="space-y-6">
             <h1 className="text-4xl font-bold leading-tight">
               Gere propostas comerciais<br />
-              <span className="text-white/80">em minutos, não horas.</span>
+              <span className="opacity-80">em minutos, não horas.</span>
             </h1>
-            <p className="text-lg text-white/70 max-w-md">
+            <p className="text-lg opacity-70 max-w-md">
               Automatize a criação de propostas, envie via WhatsApp e acompanhe
               seus resultados em tempo real.
             </p>
           </div>
 
-          <div className="flex items-center gap-6 text-sm text-white/60">
+          <div className="flex items-center gap-6 text-sm opacity-60">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 bg-success rounded-full" />
               <span>Envio via WhatsApp</span>
@@ -97,8 +98,8 @@ export default function Login() {
         </div>
 
         {/* Decorative elements */}
-        <div className="absolute -bottom-20 -right-20 w-80 h-80 bg-white/10 rounded-full blur-3xl" />
-        <div className="absolute top-20 -right-10 w-40 h-40 bg-white/10 rounded-full blur-2xl" />
+        <div className="absolute -bottom-20 -right-20 w-80 h-80 bg-foreground/10 rounded-full blur-3xl" />
+        <div className="absolute top-20 -right-10 w-40 h-40 bg-foreground/10 rounded-full blur-2xl" />
       </div>
 
       {/* Right side - Login form */}
@@ -106,8 +107,8 @@ export default function Login() {
         <div className="w-full max-w-md">
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center justify-center gap-3 mb-8">
-            <div className="w-10 h-10 bg-gradient-primary rounded-xl flex items-center justify-center shadow-primary">
-              <FileText className="w-6 h-6 text-white" />
+            <div className="w-10 h-10 glossy-button rounded-xl flex items-center justify-center">
+              <FileText className="w-6 h-6 text-primary-foreground" />
             </div>
             <span className="text-2xl font-bold text-foreground">ProposalFlow</span>
           </div>
@@ -172,7 +173,7 @@ export default function Login() {
 
                 <Button
                   type="submit"
-                  className="w-full h-11 bg-gradient-primary shadow-primary hover:opacity-90 transition-opacity"
+                  className="w-full h-11 glossy-button hover:opacity-90 transition-opacity"
                   disabled={isLoading}
                 >
                   {isLoading ? (
