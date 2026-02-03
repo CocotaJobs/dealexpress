@@ -1,83 +1,67 @@
 import { Link, useLocation } from 'react-router-dom';
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarGroup,
-  SidebarGroupLabel,
-  SidebarGroupContent,
-} from '@/components/ui/sidebar';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from '@/components/ui/sidebar';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/contexts/AuthContext';
-import {
-  LayoutDashboard,
-  Package,
-  Files,
-  Users,
-  PlusCircle,
-  List,
-  Settings,
-  LogOut,
-  ChevronUp,
-  MessageSquare,
-  FileText,
-} from 'lucide-react';
+import { LayoutDashboard, Package, Files, Users, PlusCircle, List, Settings, LogOut, ChevronUp, MessageSquare, FileText } from 'lucide-react';
 import dealexpressLogo from '@/assets/dealexpress-logo.png';
-
-const adminMenuItems = [
-  { title: 'Dashboard', icon: LayoutDashboard, url: '/dashboard' },
-  { title: 'Propostas', icon: FileText, url: '/proposals' },
-  { title: 'Nova Proposta', icon: PlusCircle, url: '/proposals/new' },
-];
-
-const adminManagementItems = [
-  { title: 'Itens', icon: Package, url: '/items' },
-  { title: 'Templates', icon: Files, url: '/templates' },
-  { title: 'Usuários', icon: Users, url: '/users' },
-];
-
-const vendorMenuItems = [
-  { title: 'Dashboard', icon: LayoutDashboard, url: '/dashboard' },
-  { title: 'Minhas Propostas', icon: List, url: '/proposals' },
-  { title: 'Nova Proposta', icon: PlusCircle, url: '/proposals/new' },
-];
-
+const adminMenuItems = [{
+  title: 'Dashboard',
+  icon: LayoutDashboard,
+  url: '/dashboard'
+}, {
+  title: 'Propostas',
+  icon: FileText,
+  url: '/proposals'
+}, {
+  title: 'Nova Proposta',
+  icon: PlusCircle,
+  url: '/proposals/new'
+}];
+const adminManagementItems = [{
+  title: 'Itens',
+  icon: Package,
+  url: '/items'
+}, {
+  title: 'Templates',
+  icon: Files,
+  url: '/templates'
+}, {
+  title: 'Usuários',
+  icon: Users,
+  url: '/users'
+}];
+const vendorMenuItems = [{
+  title: 'Dashboard',
+  icon: LayoutDashboard,
+  url: '/dashboard'
+}, {
+  title: 'Minhas Propostas',
+  icon: List,
+  url: '/proposals'
+}, {
+  title: 'Nova Proposta',
+  icon: PlusCircle,
+  url: '/proposals/new'
+}];
 export function AppSidebar() {
   const location = useLocation();
-  const { profile, signOut } = useAuth();
-
+  const {
+    profile,
+    signOut
+  } = useAuth();
   const isAdmin = profile?.role === 'admin';
   const mainMenuItems = isAdmin ? adminMenuItems : vendorMenuItems;
-
   const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map((word) => word[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
+    return name.split(' ').map(word => word[0]).join('').toUpperCase().slice(0, 2);
   };
-
   const handleLogout = async () => {
     await signOut();
   };
-
-  return (
-    <Sidebar className="border-r border-sidebar-border sidebar-glossy">
+  return <Sidebar className="border-r border-sidebar-border sidebar-glossy">
       <SidebarHeader className="p-4">
         <Link to="/dashboard" className="flex items-center gap-3">
-          <img src={dealexpressLogo} alt="DealExpress" className="w-9 h-9 object-contain" />
+          <img alt="DealExpress" className="w-12 h-12 object-contain" src="/lovable-uploads/b7744f53-5c08-4e9f-8f7b-9dff6e259ac7.png" />
           <span className="text-lg font-bold text-sidebar-foreground">DealExpress</span>
         </Link>
       </SidebarHeader>
@@ -87,71 +71,46 @@ export function AppSidebar() {
           <SidebarGroupLabel>Menu</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainMenuItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={location.pathname === item.url}
-                    tooltip={item.title}
-                  >
+              {mainMenuItems.map(item => <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild isActive={location.pathname === item.url} tooltip={item.title}>
                     <Link to={item.url}>
                       <item.icon className="w-4 h-4" />
                       <span>{item.title}</span>
                     </Link>
                   </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+                </SidebarMenuItem>)}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {isAdmin && (
-          <SidebarGroup>
+        {isAdmin && <SidebarGroup>
             <SidebarGroupLabel>Gerenciamento</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {adminManagementItems.map((item) => (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={location.pathname === item.url}
-                      tooltip={item.title}
-                    >
+                {adminManagementItems.map(item => <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild isActive={location.pathname === item.url} tooltip={item.title}>
                       <Link to={item.url}>
                         <item.icon className="w-4 h-4" />
                         <span>{item.title}</span>
                       </Link>
                     </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
+                  </SidebarMenuItem>)}
               </SidebarMenu>
             </SidebarGroupContent>
-          </SidebarGroup>
-        )}
+          </SidebarGroup>}
 
         {/* WhatsApp Status */}
         <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  className={
-                    profile?.whatsapp_connected
-                      ? 'text-success hover:text-success'
-                      : 'text-destructive hover:text-destructive'
-                  }
-                >
+                <SidebarMenuButton asChild className={profile?.whatsapp_connected ? 'text-success hover:text-success' : 'text-destructive hover:text-destructive'}>
                   <Link to="/whatsapp">
                     <MessageSquare className="w-4 h-4" />
                     <span>
                       {profile?.whatsapp_connected ? 'WhatsApp Conectado' : 'Conectar WhatsApp'}
                     </span>
-                    <div
-                      className={`w-2 h-2 rounded-full ml-auto ${
-                        profile?.whatsapp_connected ? 'bg-success' : 'bg-destructive'
-                      }`}
-                    />
+                    <div className={`w-2 h-2 rounded-full ml-auto ${profile?.whatsapp_connected ? 'bg-success' : 'bg-destructive'}`} />
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -193,6 +152,5 @@ export function AppSidebar() {
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarFooter>
-    </Sidebar>
-  );
+    </Sidebar>;
 }
