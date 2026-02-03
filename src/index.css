@@ -58,6 +58,13 @@
     --input: 48 10% 88%;
     --ring: 50 100% 50%;
 
+    /* Chart colors - Golden palette */
+    --chart-1: 50 100% 55%;
+    --chart-2: 45 100% 48%;
+    --chart-3: 40 100% 42%;
+    --chart-4: 35 90% 38%;
+    --chart-5: 30 80% 35%;
+
     /* Border radius */
     --radius: 0.625rem;
 
@@ -125,6 +132,13 @@
     --border: 0 0% 16%;
     --input: 0 0% 16%;
     --ring: 50 100% 50%;
+
+    /* Chart colors - Dark mode golden palette */
+    --chart-1: 50 100% 50%;
+    --chart-2: 45 100% 45%;
+    --chart-3: 40 95% 40%;
+    --chart-4: 35 85% 36%;
+    --chart-5: 30 75% 32%;
 
     --sidebar-background: 0 0% 6%;
     --sidebar-foreground: 0 0% 95%;
