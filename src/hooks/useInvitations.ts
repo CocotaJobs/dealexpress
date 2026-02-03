@@ -6,6 +6,7 @@ import type { Database } from '@/integrations/supabase/types';
 type AppRole = Database['public']['Enums']['app_role'];
 type InvitationStatus = Database['public']['Enums']['invitation_status'];
 
+// Interface for invitations from the safe view (no token)
 export interface Invitation {
   id: string;
   email: string;
@@ -13,19 +14,29 @@ export interface Invitation {
   status: InvitationStatus;
   expires_at: string;
   created_at: string;
-  token: string;
+}
+
+// Interface for newly created invitation (includes invite link from edge function)
+export interface CreatedInvitation {
+  email: string;
+  role: AppRole;
+  inviteLink: string;
+  expiresAt: string;
+  emailSent: boolean;
 }
 
 export function useInvitations() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  // Query uses the safe view that excludes the token field
   const { data: invitations = [], isLoading, error } = useQuery({
     queryKey: ['invitations'],
     queryFn: async (): Promise<Invitation[]> => {
+      // Use the safe view that doesn't expose tokens
       const { data, error } = await supabase
-        .from('invitations')
-        .select('id, email, role, status, expires_at, created_at, token')
+        .from('invitations_safe' as 'invitations')
+        .select('id, email, role, status, expires_at, created_at')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -34,7 +45,7 @@ export function useInvitations() {
   });
 
   const createInvitation = useMutation({
-    mutationFn: async ({ email, role }: { email: string; role: AppRole }) => {
+    mutationFn: async ({ email, role }: { email: string; role: AppRole }): Promise<CreatedInvitation> => {
       const { data, error } = await supabase.functions.invoke('send-invitation', {
         body: { email, role },
       });
@@ -46,7 +57,9 @@ export function useInvitations() {
       queryClient.invalidateQueries({ queryKey: ['invitations'] });
       toast({
         title: 'Convite enviado!',
-        description: `O link de convite foi gerado. Copie e envie para ${data.email}`,
+        description: data.emailSent 
+          ? `Um email foi enviado para ${data.email}` 
+          : `O link de convite foi gerado. Copie e envie para ${data.email}`,
       });
     },
     onError: (error: Error) => {
@@ -86,7 +99,7 @@ export function useInvitations() {
   });
 
   const resendInvitation = useMutation({
-    mutationFn: async (invitation: Invitation) => {
+    mutationFn: async (invitation: Invitation): Promise<CreatedInvitation> => {
       // Delete old invitation
       const { error: deleteError } = await supabase
         .from('invitations')
@@ -95,7 +108,7 @@ export function useInvitations() {
 
       if (deleteError) throw deleteError;
 
-      // Create new one
+      // Create new one - the edge function returns the invite link
       const { data, error } = await supabase.functions.invoke('send-invitation', {
         body: { email: invitation.email, role: invitation.role },
       });
@@ -105,6 +118,12 @@ export function useInvitations() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['invitations'] });
+      toast({
+        title: 'Convite reenviado!',
+        description: data.emailSent 
+          ? `Um novo email foi enviado para ${data.email}` 
+          : `Um novo link foi gerado para ${data.email}`,
+      });
     },
     onError: (error: Error) => {
       toast({
@@ -118,11 +137,6 @@ export function useInvitations() {
 
   const pendingInvitations = invitations.filter(inv => inv.status === 'pending');
 
-  const getInviteLink = (invitation: Invitation) => {
-    const baseUrl = window.location.origin;
-    return `${baseUrl}/register?token=${invitation.token}&email=${encodeURIComponent(invitation.email)}`;
-  };
-
   return {
     invitations,
     pendingInvitations,
@@ -133,8 +147,8 @@ export function useInvitations() {
     resendInvitation: resendInvitation.mutateAsync,
     isCreating: createInvitation.isPending,
     isResending: resendInvitation.isPending,
+    // The invite link is now returned from the edge function, not constructed client-side
     lastCreatedInvitation: createInvitation.data,
     lastResendData: resendInvitation.data,
-    getInviteLink,
   };
 }

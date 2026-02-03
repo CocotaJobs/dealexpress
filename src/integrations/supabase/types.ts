@@ -413,9 +413,103 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      invitations_safe: {
+        Row: {
+          accepted_at: string | null
+          created_at: string | null
+          email: string | null
+          expires_at: string | null
+          id: string | null
+          invited_by: string | null
+          organization_id: string | null
+          role: Database["public"]["Enums"]["app_role"] | null
+          status: Database["public"]["Enums"]["invitation_status"] | null
+        }
+        Insert: {
+          accepted_at?: string | null
+          created_at?: string | null
+          email?: string | null
+          expires_at?: string | null
+          id?: string | null
+          invited_by?: string | null
+          organization_id?: string | null
+          role?: Database["public"]["Enums"]["app_role"] | null
+          status?: Database["public"]["Enums"]["invitation_status"] | null
+        }
+        Update: {
+          accepted_at?: string | null
+          created_at?: string | null
+          email?: string | null
+          expires_at?: string | null
+          id?: string | null
+          invited_by?: string | null
+          organization_id?: string | null
+          role?: Database["public"]["Enums"]["app_role"] | null
+          status?: Database["public"]["Enums"]["invitation_status"] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invitations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles_safe: {
+        Row: {
+          active: boolean | null
+          avatar_url: string | null
+          created_at: string | null
+          email: string | null
+          id: string | null
+          name: string | null
+          organization_id: string | null
+          updated_at: string | null
+          whatsapp_connected: boolean | null
+        }
+        Insert: {
+          active?: boolean | null
+          avatar_url?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string | null
+          name?: string | null
+          organization_id?: string | null
+          updated_at?: string | null
+          whatsapp_connected?: boolean | null
+        }
+        Update: {
+          active?: boolean | null
+          avatar_url?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string | null
+          name?: string | null
+          organization_id?: string | null
+          updated_at?: string | null
+          whatsapp_connected?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
+      get_own_whatsapp_session: {
+        Args: never
+        Returns: {
+          whatsapp_connected: boolean
+          whatsapp_session_id: string
+        }[]
+      }
       get_user_organization_id: { Args: never; Returns: string }
       has_role: {
         Args: {
