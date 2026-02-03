@@ -1,3 +1,4 @@
+import React from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -47,7 +48,7 @@ interface StatCardProps {
   animationDelay?: number;
 }
 
-function StatCard({ 
+const StatCard = React.forwardRef<HTMLDivElement, StatCardProps>(({ 
   title, 
   value, 
   rawValue,
@@ -58,7 +59,7 @@ function StatCard({
   isLoading, 
   href,
   animationDelay = 0 
-}: StatCardProps) {
+}, ref) => {
   // Animate the number if rawValue is provided
   const animatedValue = useCountUp(rawValue ?? 0, {
     duration: 1200,
@@ -141,7 +142,7 @@ function StatCard({
   if (href) {
     return (
       <Link to={href} className="block">
-        <Card className={cardClasses} style={cardStyle}>
+        <Card ref={ref} className={cardClasses} style={cardStyle}>
           {cardContent}
         </Card>
       </Link>
@@ -150,13 +151,15 @@ function StatCard({
 
   return (
     <Card 
+      ref={ref}
       className="stat-card hover-glow-subtle animate-stagger-in" 
       style={cardStyle}
     >
       {cardContent}
     </Card>
   );
-}
+});
+StatCard.displayName = 'StatCard';
 
 const COLORS = ['hsl(var(--primary))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))'];
 
