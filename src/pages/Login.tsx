@@ -67,7 +67,7 @@ export default function Login() {
       }} />
         <div className="relative z-10 flex flex-col justify-between p-12 text-primary-foreground">
           <div className="flex items-center gap-3">
-            <img alt="DealExpress" className="w-10 h-10 object-contain" src="/lovable-uploads/4a1fa207-a021-49ac-9d15-28f212235a76.png" />
+            <img alt="DealExpress" className="w-20 h-20 object-contain" src="/lovable-uploads/4a1fa207-a021-49ac-9d15-28f212235a76.png" />
             <span className="text-2xl font-bold">DealExpress</span>
           </div>
 
