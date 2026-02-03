@@ -7,7 +7,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useAuth } from '@/contexts/AuthContext';
 import { Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react';
 import dealexpressLogo from '@/assets/dealexpress-logo.png';
-
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -15,22 +14,26 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
-  const { signIn, isAuthenticated, isLoading: authLoading } = useAuth();
-
+  const {
+    signIn,
+    isAuthenticated,
+    isLoading: authLoading
+  } = useAuth();
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
-      navigate('/dashboard', { replace: true });
+      navigate('/dashboard', {
+        replace: true
+      });
     }
   }, [isAuthenticated, authLoading, navigate]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
-
     try {
-      const { error: signInError } = await signIn(email, password);
-      
+      const {
+        error: signInError
+      } = await signIn(email, password);
       if (signInError) {
         if (signInError.message.includes('Invalid login credentials')) {
           setError('Email ou senha incorretos.');
@@ -40,7 +43,9 @@ export default function Login() {
           setError(signInError.message);
         }
       } else {
-        navigate('/dashboard', { replace: true });
+        navigate('/dashboard', {
+          replace: true
+        });
       }
     } catch (err) {
       setError('Erro ao fazer login. Tente novamente.');
@@ -48,24 +53,21 @@ export default function Login() {
       setIsLoading(false);
     }
   };
-
   if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-surface">
+    return <div className="min-h-screen flex items-center justify-center bg-gradient-surface">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
+      </div>;
   }
-
-  return (
-    <div className="min-h-screen flex">
+  return <div className="min-h-screen flex">
       {/* Left side - Branding */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-hero relative overflow-hidden">
         <div className="absolute inset-0 pattern-dots opacity-20" />
-        <div className="absolute inset-0" style={{ background: 'var(--gradient-glossy)' }} />
+        <div className="absolute inset-0" style={{
+        background: 'var(--gradient-glossy)'
+      }} />
         <div className="relative z-10 flex flex-col justify-between p-12 text-primary-foreground">
           <div className="flex items-center gap-3">
-            <img src={dealexpressLogo} alt="DealExpress" className="w-10 h-10 object-contain" />
+            <img alt="DealExpress" className="w-10 h-10 object-contain" src="/lovable-uploads/4a1fa207-a021-49ac-9d15-28f212235a76.png" />
             <span className="text-2xl font-bold">DealExpress</span>
           </div>
 
@@ -119,68 +121,35 @@ export default function Login() {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
-                {error && (
-                  <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-lg border border-destructive/20">
+                {error && <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-lg border border-destructive/20">
                     {error}
-                  </div>
-                )}
+                  </div>}
 
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="seu@email.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    className="h-11 input-focus"
-                  />
+                  <Input id="email" type="email" placeholder="seu@email.com" value={email} onChange={e => setEmail(e.target.value)} required className="h-11 input-focus" />
                 </div>
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="password">Senha</Label>
-                    <Link
-                      to="/forgot-password"
-                      className="text-sm text-primary hover:text-primary/80 font-medium"
-                    >
+                    <Link to="/forgot-password" className="text-sm text-primary hover:text-primary/80 font-medium">
                       Esqueceu a senha?
                     </Link>
                   </div>
                   <div className="relative">
-                    <Input
-                      id="password"
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      className="h-11 pr-10 input-focus"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                    >
+                    <Input id="password" type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} required className="h-11 pr-10 input-focus" />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
 
-                <Button
-                  type="submit"
-                  className="w-full h-11 glossy-button hover:opacity-90 transition-opacity"
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <>
+                <Button type="submit" className="w-full h-11 glossy-button hover:opacity-90 transition-opacity" disabled={isLoading}>
+                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>
                       Entrar
                       <ArrowRight className="w-4 h-4 ml-2" />
-                    </>
-                  )}
+                    </>}
                 </Button>
               </form>
             </CardContent>
@@ -194,6 +163,5 @@ export default function Login() {
           </p>
         </div>
       </div>
-    </div>
-  );
+    </div>;
 }
