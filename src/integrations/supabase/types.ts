@@ -519,6 +519,7 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: never; Returns: boolean }
+      validate_invitation_token: { Args: { _token: string }; Returns: Json }
     }
     Enums: {
       app_role: "admin" | "vendor"
