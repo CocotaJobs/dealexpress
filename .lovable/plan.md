@@ -1,117 +1,104 @@
 
-# Plano: Cards Clicaveis no Dashboard
+# Plano de Animações para o Dashboard
 
-## Resumo
-Tornar os cards relacionados a propostas no dashboard interativos, permitindo que o usuario clique neles para navegar diretamente para a lista de propostas com filtros apropriados pre-aplicados.
+## Resumo das Animações a Implementar
 
----
+Com base na sua seleção, vou adicionar as seguintes animações ao dashboard:
 
-## Comportamento Esperado
-
-### Cards que serao clicaveis
-
-| Card | Navegacao |
-|------|-----------|
-| Total de Propostas | `/proposals` (todas) |
-| Valor Total | `/proposals` (todas) |
-| Propostas Enviadas | `/proposals?status=sent` |
-| Rascunhos | `/proposals?status=draft` |
-| Grafico de Pizza (Rascunho) | `/proposals?status=draft` |
-| Grafico de Pizza (Enviadas) | `/proposals?status=sent` |
-| Grafico de Pizza (Expiradas) | `/proposals?status=expired` |
-
-### Feedback Visual
-- Cursor pointer ao passar sobre o card
-- Efeito de hover sutil (elevacao/brilho)
-- Indicador visual de que e clicavel (icone de seta ou transicao)
+1. **Animações Staggered nos Cards** - Efeito cascata onde cada card aparece com um pequeno atraso
+2. **Animação de Contagem nos Números** - Valores contam de 0 até o valor final
+3. **Animações de Entrada nos Gráficos** - Linhas desenhando e barras crescendo
+4. **Pulso Sutil no Botão "Nova Proposta"** (bem discreto, como solicitado)
+5. **Efeito de Animação no PieChart** - Crescimento do centro para fora
+6. **Efeitos de Hover Sutis** - Pequenos brilhos dourados e transições suaves
 
 ---
 
-## Etapas de Implementacao
+## Detalhes Técnicos da Implementação
 
-### Etapa 1: Atualizar StatCard para Suportar Navegacao
-Modificar o componente `StatCard` para aceitar uma prop opcional `href` que transforma o card em um link navegavel.
-
-**Mudancas:**
-- Adicionar prop `href?: string` ao interface
-- Envolver o card com `Link` quando href estiver presente
-- Adicionar estilos de hover interativo
-
-### Etapa 2: Aplicar Links nos Cards de Propostas
-Passar a prop `href` para os cards relevantes no Dashboard:
+### 1. Hook Personalizado para Contagem de Números
+Criar um hook `useCountUp` que anima valores de 0 até o número final com easing suave.
 
 ```text
-StatCard "Total de Propostas" -> href="/proposals"
-StatCard "Valor Total" -> href="/proposals"
-StatCard "Propostas Enviadas" (vendedor) -> href="/proposals?status=sent"
-StatCard "Rascunhos" (vendedor) -> href="/proposals?status=draft"
+src/hooks/useCountUp.ts (novo arquivo)
+├── Parâmetros: valor final, duração, delay opcional
+├── Retorna: valor animado atual
+└── Usa requestAnimationFrame para performance
 ```
 
-### Etapa 3: Tornar Grafico de Pizza Interativo
-Adicionar eventos de clique nas fatias do grafico PieChart para navegar por status:
+### 2. Componentes Animados
 
-- Fatia "Rascunho" -> `/proposals?status=draft`
-- Fatia "Enviadas" -> `/proposals?status=sent`
-- Fatia "Expiradas" -> `/proposals?status=expired`
+**StatCard com Stagger:**
+- Adicionar prop `animationDelay` ao StatCard
+- Cada card recebe um delay incremental (0ms, 100ms, 200ms, 300ms)
+- Usar CSS custom property para controlar o delay
 
-### Etapa 4: Atualizar Pagina de Propostas para Ler Query Params
-Modificar a pagina Proposals.tsx para:
-- Ler o parametro `status` da URL
-- Pre-preencher o filtro de status com base no parametro
-- Sincronizar o filtro com a URL
+**Números Animados:**
+- Integrar `useCountUp` nos valores de Total de Propostas, Valor Total, etc.
+- Formatar números durante a animação (moeda, porcentagem)
 
----
+### 3. Animações de Gráficos (Recharts)
 
-## Detalhes Tecnicos
-
-### Componente StatCard Atualizado
 ```text
-interface StatCardProps {
-  title: string;
-  value: string;
-  change?: string;
-  changeType?: 'positive' | 'negative' | 'neutral';
-  icon: React.ElementType;
-  isLoading?: boolean;
-  href?: string;  // Nova prop para navegacao
-}
+LineChart:
+├── isAnimationActive={true}
+├── animationDuration={1500}
+├── animationEasing="ease-out"
+└── animationBegin={300} (delay para sincronizar com cards)
+
+BarChart:
+├── isAnimationActive={true}
+├── animationDuration={1200}
+└── animationEasing="ease-out"
+
+PieChart:
+├── isAnimationActive={true}
+├── animationDuration={1000}
+├── animationBegin={400}
+└── startAngle={90}, endAngle={-270} (efeito de preenchimento circular)
 ```
 
-### Estrutura do Link
+### 4. Pulso Sutil no Botão "Nova Proposta"
+- Adicionar classe `animate-pulse-subtle` com opacidade mínima (90%-100%)
+- Efeito quase imperceptível que chama atenção sem distrair
+
+### 5. CSS Keyframes Adicionais
+
 ```text
-- Se href existe: envolver com <Link to={href}>
-- Adicionar classes: cursor-pointer, hover-lift, group
-- Manter comportamento de loading sem link
+index.css:
+├── @keyframes stagger-in (para entrada escalonada)
+├── @keyframes count-pulse (pulso sutil durante contagem)
+├── @keyframes pulse-subtle (para botão Nova Proposta)
+└── @keyframes glow-pulse (brilho dourado sutil no hover)
 ```
 
-### Grafico de Pizza Interativo
-```text
-- Usar onClick no componente <Cell>
-- useNavigate() para navegacao programatica
-- Adicionar cursor: pointer nas fatias
-- Feedback visual de hover nas fatias
-```
+### 6. Estrutura de Delays
 
-### Leitura de Query Params em Proposals
 ```text
-- useSearchParams() do react-router-dom
-- Inicializar statusFilter com searchParams.get('status')
-- Atualizar URL quando filtro mudar (opcional)
+Sequência de Animação:
+├── 0ms: Header aparece
+├── 0-300ms: Stats cards (staggered, 75ms entre cada)
+├── 300ms: Gráficos começam a animar
+├── 400ms: PieChart começa
+└── 500ms: Status Summary Cards (bottom)
 ```
 
 ---
 
-## Arquivos Afetados
+## Arquivos a Serem Modificados
 
-| Arquivo | Mudanca |
-|---------|---------|
-| `src/pages/Dashboard.tsx` | Adicionar props href aos StatCards, tornar pie chart clicavel |
-| `src/pages/Proposals.tsx` | Ler query param de status da URL |
+| Arquivo | Alterações |
+|---------|------------|
+| `src/hooks/useCountUp.ts` | Novo hook para animação de números |
+| `src/pages/Dashboard.tsx` | Integrar animações em cards, gráficos e números |
+| `src/index.css` | Adicionar keyframes e classes de animação |
 
 ---
 
-## Resultado Final
-- Cards do dashboard serao visivelmente interativos
-- Clicar em um card de proposta levara o usuario diretamente para a lista filtrada
-- Experiencia mais fluida de navegacao entre metricas e dados detalhados
-- Grafico de pizza permitira explorar propostas por status
+## Observações de UX
+
+- Todas as animações respeitam `prefers-reduced-motion` do sistema
+- Animações são executadas apenas na primeira renderização (não em re-renders)
+- Durações curtas (200-1500ms) para não atrapalhar a experiência
+- O pulso no botão "Nova Proposta" será muito sutil (opacity 95%-100%)
+- Efeitos de hover incrementais, não intrusivos
