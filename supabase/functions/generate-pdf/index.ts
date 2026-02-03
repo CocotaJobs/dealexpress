@@ -160,8 +160,12 @@ function mergeRunsInParagraph(xmlContent: string): string {
         return paragraph;
       }
       
-      // Extract all text from <w:t> elements
-      const textMatches = [...paragraph.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)];
+      // Replace <w:tab/> with a tab character wrapped in <w:t> so it's captured by the regex
+      // This preserves tabs that Word stores as separate XML elements
+      const processedParagraph = paragraph.replace(/<w:tab\s*\/?>/g, '<w:t>\t</w:t>');
+      
+      // Extract all text from <w:t> elements (now includes converted tabs)
+      const textMatches = [...processedParagraph.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)];
       if (textMatches.length <= 1) {
         return paragraph; // Already consolidated or only one text node
       }
