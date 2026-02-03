@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -70,9 +70,23 @@ export default function Proposals() {
   const { profile } = useAuth();
   const isAdmin = profile?.role === 'admin';
   const { proposals, isLoading, duplicateProposal, deleteProposal } = useProposals();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState(() => {
+    const urlStatus = searchParams.get('status');
+    return urlStatus && ['draft', 'sent', 'expired'].includes(urlStatus) ? urlStatus : 'all';
+  });
+
+  // Sync URL with filter changes
+  useEffect(() => {
+    if (statusFilter === 'all') {
+      searchParams.delete('status');
+    } else {
+      searchParams.set('status', statusFilter);
+    }
+    setSearchParams(searchParams, { replace: true });
+  }, [statusFilter, searchParams, setSearchParams]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState<string | null>(null);
