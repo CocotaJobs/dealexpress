@@ -23,9 +23,9 @@ export function useUsers() {
   const { data: users = [], isLoading, error } = useQuery({
     queryKey: ['users'],
     queryFn: async (): Promise<UserWithRole[]> => {
-      // Fetch profiles from the same organization
+      // Fetch profiles from the secure view (hides emails from non-admins)
       const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
+        .from('profiles_safe')
         .select('id, name, email, whatsapp_connected, created_at, active');
 
       if (profilesError) throw profilesError;

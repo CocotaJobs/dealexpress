@@ -473,7 +473,7 @@ export type Database = {
           active?: boolean | null
           avatar_url?: string | null
           created_at?: string | null
-          email?: string | null
+          email?: never
           id?: string | null
           name?: string | null
           organization_id?: string | null
@@ -484,7 +484,7 @@ export type Database = {
           active?: boolean | null
           avatar_url?: string | null
           created_at?: string | null
-          email?: string | null
+          email?: never
           id?: string | null
           name?: string | null
           organization_id?: string | null
