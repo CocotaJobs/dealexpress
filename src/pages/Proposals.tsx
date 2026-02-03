@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Table,
   TableBody,
@@ -75,6 +76,9 @@ export default function Proposals() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -105,6 +109,16 @@ export default function Proposals() {
     setDeletingId(null);
   };
 
+  const handleBulkDelete = async () => {
+    setIsBulkDeleting(true);
+    for (const id of selectedIds) {
+      await deleteProposal(id);
+    }
+    setSelectedIds([]);
+    setIsBulkDeleting(false);
+    setShowBulkDeleteDialog(false);
+  };
+
   const filteredProposals = proposals.filter((proposal) => {
     const matchesSearch =
       proposal.client_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -113,6 +127,26 @@ export default function Proposals() {
     const matchesStatus = statusFilter === 'all' || proposal.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  // Only draft proposals can be deleted
+  const deletableProposals = filteredProposals.filter((p) => p.status === 'draft');
+  const selectedDeletableCount = selectedIds.filter((id) =>
+    deletableProposals.some((p) => p.id === id)
+  ).length;
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === deletableProposals.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(deletableProposals.map((p) => p.id));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
 
   return (
     <div className="p-6 space-y-6 animate-in">
@@ -126,12 +160,24 @@ export default function Proposals() {
             {isLoading ? '...' : `${filteredProposals.length} propostas encontradas`}
           </p>
         </div>
-        <Button asChild className="bg-gradient-primary shadow-primary hover:opacity-90">
-          <Link to="/proposals/new">
-            <PlusCircle className="w-4 h-4 mr-2" />
-            Nova Proposta
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          {selectedIds.length > 0 && (
+            <Button
+              variant="destructive"
+              onClick={() => setShowBulkDeleteDialog(true)}
+              className="gap-2"
+            >
+              <Trash2 className="w-4 h-4" />
+              Excluir ({selectedIds.length})
+            </Button>
+          )}
+          <Button asChild className="bg-gradient-primary shadow-primary hover:opacity-90">
+            <Link to="/proposals/new">
+              <PlusCircle className="w-4 h-4 mr-2" />
+              Nova Proposta
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -170,6 +216,16 @@ export default function Proposals() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
+              <TableHead className="w-[50px]">
+                <Checkbox
+                  checked={
+                    deletableProposals.length > 0 &&
+                    selectedIds.length === deletableProposals.length
+                  }
+                  onCheckedChange={toggleSelectAll}
+                  aria-label="Selecionar todas"
+                />
+              </TableHead>
               <TableHead className="font-semibold">Número</TableHead>
               <TableHead className="font-semibold">Cliente</TableHead>
               {isAdmin && <TableHead className="font-semibold">Vendedor</TableHead>}
@@ -183,6 +239,9 @@ export default function Proposals() {
             {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
+                  <TableCell>
+                    <Skeleton className="h-4 w-4" />
+                  </TableCell>
                   <TableCell>
                     <Skeleton className="h-4 w-32" />
                   </TableCell>
@@ -214,7 +273,7 @@ export default function Proposals() {
             ) : filteredProposals.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={isAdmin ? 7 : 6}
+                  colSpan={isAdmin ? 8 : 7}
                   className="h-32 text-center text-muted-foreground"
                 >
                   <div className="flex flex-col items-center gap-2">
@@ -224,90 +283,109 @@ export default function Proposals() {
                 </TableCell>
               </TableRow>
             ) : (
-              filteredProposals.map((proposal) => (
-                <TableRow key={proposal.id} className="hover:bg-muted/30">
-                  <TableCell className="font-medium">{proposal.proposal_number}</TableCell>
-                  <TableCell>
-                    <div>
-                      <p className="font-medium">{proposal.client_name}</p>
-                      <p className="text-sm text-muted-foreground">{proposal.client_company}</p>
-                    </div>
-                  </TableCell>
-                  {isAdmin && <TableCell>{proposal.vendor?.name || '-'}</TableCell>}
-                  <TableCell>{formatDate(proposal.created_at)}</TableCell>
-                  <TableCell className="text-right font-medium">
-                    {formatCurrency(proposal.total_value || 0)}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={`${statusVariants[proposal.status]} font-medium`}>
-                      {statusLabels[proposal.status]}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreHorizontal className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem asChild>
-                          <Link to={`/proposals/${proposal.id}`} className="flex items-center gap-2">
-                            <Eye className="w-4 h-4" />
-                            Visualizar
-                          </Link>
-                        </DropdownMenuItem>
-                        {proposal.status === 'draft' && (
+              filteredProposals.map((proposal) => {
+                const isDeletable = proposal.status === 'draft';
+                const isSelected = selectedIds.includes(proposal.id);
+
+                return (
+                  <TableRow
+                    key={proposal.id}
+                    className={`hover:bg-muted/30 ${isSelected ? 'bg-muted/20' : ''}`}
+                  >
+                    <TableCell>
+                      {isDeletable ? (
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => toggleSelect(proposal.id)}
+                          aria-label={`Selecionar ${proposal.proposal_number}`}
+                        />
+                      ) : (
+                        <Checkbox disabled className="opacity-30" />
+                      )}
+                    </TableCell>
+                    <TableCell className="font-medium">{proposal.proposal_number}</TableCell>
+                    <TableCell>
+                      <div>
+                        <p className="font-medium">{proposal.client_name}</p>
+                        <p className="text-sm text-muted-foreground">{proposal.client_company}</p>
+                      </div>
+                    </TableCell>
+                    {isAdmin && <TableCell>{proposal.vendor?.name || '-'}</TableCell>}
+                    <TableCell>{formatDate(proposal.created_at)}</TableCell>
+                    <TableCell className="text-right font-medium">
+                      {formatCurrency(proposal.total_value || 0)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={`${statusVariants[proposal.status]} font-medium`}>
+                        {statusLabels[proposal.status]}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
                           <DropdownMenuItem asChild>
-                            <Link
-                              to={`/proposals/${proposal.id}/edit`}
-                              className="flex items-center gap-2"
-                            >
-                              <Pencil className="w-4 h-4" />
-                              Editar
+                            <Link to={`/proposals/${proposal.id}`} className="flex items-center gap-2">
+                              <Eye className="w-4 h-4" />
+                              Visualizar
                             </Link>
                           </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem
-                          onClick={() => handleDuplicate(proposal.id)}
-                          disabled={isDuplicating === proposal.id}
-                        >
-                          {isDuplicating === proposal.id ? (
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          ) : (
-                            <Copy className="w-4 h-4 mr-2" />
-                          )}
-                          Duplicar
-                        </DropdownMenuItem>
-                        {proposal.status !== 'draft' && (
-                          <DropdownMenuItem className="flex items-center gap-2">
-                            <FileDown className="w-4 h-4" />
-                            Baixar PDF
-                          </DropdownMenuItem>
-                        )}
-                        {proposal.status === 'draft' && (
-                          <>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={() => setDeletingId(proposal.id)}
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Excluir
+                          {proposal.status === 'draft' && (
+                            <DropdownMenuItem asChild>
+                              <Link
+                                to={`/proposals/${proposal.id}/edit`}
+                                className="flex items-center gap-2"
+                              >
+                                <Pencil className="w-4 h-4" />
+                                Editar
+                              </Link>
                             </DropdownMenuItem>
-                          </>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))
+                          )}
+                          <DropdownMenuItem
+                            onClick={() => handleDuplicate(proposal.id)}
+                            disabled={isDuplicating === proposal.id}
+                          >
+                            {isDuplicating === proposal.id ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <Copy className="w-4 h-4 mr-2" />
+                            )}
+                            Duplicar
+                          </DropdownMenuItem>
+                          {proposal.status !== 'draft' && (
+                            <DropdownMenuItem className="flex items-center gap-2">
+                              <FileDown className="w-4 h-4" />
+                              Baixar PDF
+                            </DropdownMenuItem>
+                          )}
+                          {proposal.status === 'draft' && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => setDeletingId(proposal.id)}
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Excluir
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>
       </Card>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Single Confirmation Dialog */}
       <AlertDialog open={!!deletingId} onOpenChange={() => setDeletingId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -325,6 +403,29 @@ export default function Proposals() {
             >
               {isDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <AlertDialog open={showBulkDeleteDialog} onOpenChange={setShowBulkDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir {selectedIds.length} Propostas</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir {selectedIds.length} proposta(s) selecionada(s)? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBulkDeleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkDelete}
+              disabled={isBulkDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isBulkDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Excluir {selectedIds.length}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
