@@ -1,127 +1,86 @@
 
+# Plano de Correção de Dados do Usuário André Rocha
 
-# Plano de Correção de Segurança
+## Problema Identificado
 
-## Resumo dos Problemas Identificados
+O usuário **André Rocha** (andre.p@jvfmaquinas.com.br) foi registrado incorretamente:
 
-Existem **3 erros de segurança de nível "error"** que precisam ser corrigidos:
+| Campo | Valor Atual (Errado) | Valor Correto |
+|-------|---------------------|---------------|
+| Organização | `André Rocha's Organization` | `João Vitor Felipe's Organization` |
+| Role | `admin` | `vendor` |
+| ID Org | `7d3d5e71-ef49-...` | `9940b4bb-3ffb-...` |
 
-1. **profiles_table_public_exposure**: A tabela `profiles` está acessível a usuários não autenticados porque a política SELECT tem `roles:{public}` em vez de `{authenticated}`.
+## Causa Raiz
 
-2. **invitations_safe_missing_rls**: A view `invitations_safe` não tem políticas RLS próprias e a tabela base `invitations` tem a mesma vulnerabilidade com `roles:{public}`.
+O token de convite **não foi passado corretamente** durante o registro. Isso pode ter acontecido porque:
+1. O usuário acessou a página de registro diretamente (sem usar o link do convite)
+2. Os parâmetros da URL foram perdidos durante a navegação
 
-3. **proposals_table_public_exposure**: A tabela `proposals` tem políticas RLS, mas a SELECT policy também precisa ter `roles:{authenticated}` para garantir que usuários anônimos não possam consultá-la.
-
----
-
-## Solução Proposta
-
-### Parte 1: Correção das Políticas RLS no Banco de Dados
+## Solução: Migração SQL
 
 Vou criar uma migração SQL que:
 
-1. **Recria as políticas SELECT** das tabelas `profiles`, `invitations` e `proposals` com `TO authenticated` explicitamente, garantindo que somente usuários autenticados possam ler dados.
-
-2. **Remove o acesso a `anon`** de todas as tabelas sensíveis.
+1. **Move o usuário André para a organização correta** (JVF Máquinas)
+2. **Altera o role de admin para vendor**
+3. **Marca o convite como aceito**
+4. **Exclui a organização órfã** que foi criada automaticamente
 
 ```text
-+------------------+     +------------------+     +------------------+
-|    profiles      |     |   invitations    |     |    proposals     |
-+------------------+     +------------------+     +------------------+
-| SELECT: public   | --> | SELECT: public   | --> | SELECT: auth     |
-| (VULNERÁVEL!)    |     | (VULNERÁVEL!)    |     | (OK, mas reforçar|
-+------------------+     +------------------+     +------------------+
-         |                        |                        |
-         v                        v                        v
-+------------------+     +------------------+     +------------------+
-| SELECT: auth     |     | SELECT: auth     |     | SELECT: auth     |
-| (CORRIGIDO)      |     | (CORRIGIDO)      |     | (REFORÇADO)      |
-+------------------+     +------------------+     +------------------+
+ANTES:
+┌─────────────────────┐     ┌─────────────────────────────┐
+│ André Rocha's Org   │     │ João Vitor Felipe's Org     │
+│ (órfã, 0 items)     │     │ (8 templates, 2 items)      │
+├─────────────────────┤     ├─────────────────────────────┤
+│ - André (admin) ✗   │     │ - João Vitor Felipe (admin) │
+└─────────────────────┘     │ - João Vitor (vendor) ✓     │
+                            └─────────────────────────────┘
+
+DEPOIS:
+┌─────────────────────────────┐
+│ João Vitor Felipe's Org     │
+│ (8 templates, 2 items)      │
+├─────────────────────────────┤
+│ - João Vitor Felipe (admin) │
+│ - João Vitor (vendor)       │
+│ - André Rocha (vendor) ✓    │
+└─────────────────────────────┘
 ```
-
-### Parte 2: Atualização do Código Frontend
-
-1. **AuthContext.tsx**: Atualizar para buscar dados do usuário usando a RPC `get_own_whatsapp_session()` para dados sensíveis de WhatsApp, e a view `profiles_safe` para dados básicos do perfil (mas mantendo a tabela `profiles` para o próprio usuário já que RLS permite).
-
-2. **useProposals.ts**: Continuar buscando nome do vendedor da tabela `profiles` (já que é apenas `id, name` e RLS permite para a organização).
-
-3. **ViewProposal.tsx**: Mesmo caso - já busca apenas `id, name`.
-
-4. **useDashboardMetrics.ts**: Verificar se está buscando apenas contagens.
-
----
-
-## Detalhes Técnicos
-
-### Migração SQL
-
-```sql
--- 1. Fix profiles SELECT policy - change from public to authenticated
-DROP POLICY IF EXISTS "Users can view profiles in their organization" ON public.profiles;
-CREATE POLICY "Users can view profiles in their organization"
-  ON public.profiles
-  FOR SELECT
-  TO authenticated
-  USING (organization_id = get_user_organization_id());
-
--- 2. Fix invitations SELECT policy - change from public to authenticated  
-DROP POLICY IF EXISTS "Only admins can view invitations" ON public.invitations;
-CREATE POLICY "Only admins can view invitations"
-  ON public.invitations
-  FOR SELECT
-  TO authenticated
-  USING (is_admin() AND (organization_id = get_user_organization_id()));
-
--- 3. Reinforce proposals policies (already authenticated but let's be explicit)
-DROP POLICY IF EXISTS "Users can view proposals" ON public.proposals;
-CREATE POLICY "Users can view proposals"
-  ON public.proposals
-  FOR SELECT
-  TO authenticated
-  USING (
-    (organization_id = get_user_organization_id()) 
-    AND (is_admin() OR (created_by = auth.uid()))
-  );
-```
-
-### Modificação do AuthContext.tsx
-
-O código atual busca `whatsapp_session_id` diretamente:
-
-```typescript
-// ANTES (vulnerável)
-const { data: profileData } = await supabase
-  .from('profiles')
-  .select('*')  // Inclui whatsapp_session_id!
-  .eq('id', userId)
-```
-
-Vou modificar para buscar apenas os campos necessários e usar a RPC para dados sensíveis de WhatsApp:
-
-```typescript
-// DEPOIS (seguro)
-const { data: profileData } = await supabase
-  .from('profiles')
-  .select('id, email, name, organization_id, whatsapp_connected, avatar_url, created_at')
-  .eq('id', userId)
-```
-
-Nota: O `whatsapp_session_id` não é usado no frontend (apenas nas Edge Functions), então pode ser removido do UserProfile interface.
-
----
 
 ## Arquivos a Modificar
 
-1. **Nova migração SQL** - Corrigir políticas RLS
-2. **src/contexts/AuthContext.tsx** - Remover busca de `whatsapp_session_id`
+1. **Nova migração SQL** - Corrigir os dados do usuário André
 
----
+## SQL a Executar
 
-## Validação
+```sql
+-- Corrigir o usuário André Rocha
+-- 1. Mover para a organização correta
+UPDATE profiles
+SET organization_id = '9940b4bb-3ffb-424f-9e92-149ec008d423'
+WHERE id = 'b2a8074a-0b9f-459b-aef7-9d25a0ad1013';
 
-Após implementação:
-- Usuários não autenticados não poderão consultar nenhuma tabela
-- A view `invitations_safe` herdará as políticas da tabela base (que agora exige autenticação)
-- O campo `whatsapp_session_id` não será mais exposto no frontend
-- Todas as funcionalidades continuarão funcionando normalmente
+-- 2. Alterar role de admin para vendor
+UPDATE user_roles
+SET role = 'vendor'
+WHERE user_id = 'b2a8074a-0b9f-459b-aef7-9d25a0ad1013';
 
+-- 3. Marcar o convite como aceito
+UPDATE invitations
+SET status = 'accepted', accepted_at = NOW()
+WHERE email = 'andre.p@jvfmaquinas.com.br'
+  AND organization_id = '9940b4bb-3ffb-424f-9e92-149ec008d423';
+
+-- 4. Excluir a organização órfã
+DELETE FROM organizations
+WHERE id = '7d3d5e71-ef49-4fc0-8eaa-2aaa51e62fa9';
+```
+
+## Resultado Esperado
+
+Após a migração:
+- André Rocha aparecerá na lista de usuários da organização JVF Máquinas
+- André terá acesso aos 8 templates e 2 itens existentes
+- O role de André será `vendor` (vendedor)
+- A organização órfã será removida
+- O convite original será marcado como aceito
