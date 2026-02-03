@@ -1,157 +1,189 @@
 
-## Plano: Correções de Fuso Horário, Bloqueio de Popup e Redirecionamento
+## Plano: Implementar Gestão de Equipes com Hierarquia
 
-### Problemas Identificados
+### Análise da Situação Atual
 
-| # | Problema | Causa |
-|---|----------|-------|
-| 1 | Data atual com fuso horário errado | A função `formatDateExtended()` usa `new Date()` que utiliza UTC no servidor Edge Function |
-| 2 | Chrome bloqueia a pré-visualização do PDF e gera propostas duplicadas | Ao fechar a aba bloqueada e salvar novamente, o `createProposal` é chamado duas vezes |
-| 3 | Ao salvar rascunho, redireciona para `/proposals` | O código atual navega para a lista após salvar |
+A estrutura de banco de dados já está bem configurada com:
 
----
+| Componente | Status | Descrição |
+|------------|--------|-----------|
+| `organizations` | Pronto | Multi-tenant para separar dados por empresa |
+| `user_roles` | Pronto | Tabela separada para roles (admin/vendor) |
+| `invitations` | Pronto | Sistema de convites com token, expiração e status |
+| `profiles` | Pronto | Dados de perfil com organization_id |
+| RLS Policies | Pronto | Políticas de segurança por organização e role |
+| Trigger de registro | Pronto | Processa convites automaticamente |
 
-### Correção 1: Fuso Horário (America/Sao_Paulo)
-
-**Arquivo:** `supabase/functions/generate-pdf/index.ts`
-
-**Problema atual (linhas 63-74):**
-```javascript
-const formatDateExtended = (): string => {
-  const now = new Date(); // Usa UTC no servidor
-  // ...
-};
-```
-
-**Solução:**
-Usar a API `toLocaleDateString` com o timezone `America/Sao_Paulo`:
-
-```javascript
-const formatDateExtended = (): string => {
-  const months = [
-    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-  ];
-  
-  // Use Brasília timezone
-  const now = new Date();
-  const options: Intl.DateTimeFormatOptions = { timeZone: 'America/Sao_Paulo' };
-  
-  const day = new Intl.DateTimeFormat('pt-BR', { ...options, day: 'numeric' }).format(now);
-  const monthIndex = parseInt(new Intl.DateTimeFormat('pt-BR', { ...options, month: 'numeric' }).format(now)) - 1;
-  const year = new Intl.DateTimeFormat('pt-BR', { ...options, year: 'numeric' }).format(now);
-  
-  return `${day} de ${months[monthIndex]} de ${year}`;
-};
-```
-
-Também atualizar a função `formatDate` para usar o mesmo timezone quando formatar datas.
+**Problema identificado**: A página `Users.tsx` usa **dados mock** e não está conectada ao banco de dados real.
 
 ---
 
-### Correção 2: Evitar Propostas Duplicadas
+### Escopo da Implementação
 
-**Arquivos:** `src/pages/NewProposal.tsx` e `src/pages/EditProposal.tsx`
+#### Fase 1: Conectar Users.tsx ao Banco de Dados
 
-**Problema:**
-O fluxo atual no `handlePreview`:
-1. Abre janela de preview
-2. Cria/atualiza proposta
-3. Gera PDF
-4. Se o usuário fechar a aba antes de completar e clicar em "Salvar", cria outra proposta
+1. **Criar hook `useUsers.ts`**
+   - Buscar usuários da organização (profiles + roles)
+   - Funções para ativar/desativar usuários
+   - Função para alterar role do usuário
 
-**Solução:**
-Adicionar um estado para controlar se a proposta já foi criada e redirecionar para a página de edição após a primeira criação. Isso evita que uma segunda chamada de "Salvar Rascunho" crie uma nova proposta.
+2. **Criar hook `useInvitations.ts`**
+   - Buscar convites pendentes da organização
+   - Criar novo convite com token único
+   - Reenviar convite
+   - Cancelar convite
 
-**Para NewProposal.tsx:**
-1. Adicionar estado `createdProposalId` para rastrear se a proposta já foi criada
-2. Se a proposta já foi criada, redirecionar para a página de edição
-3. Após `handlePreview` criar a proposta, definir o ID
+3. **Atualizar `Users.tsx`**
+   - Remover dados mock
+   - Integrar com os hooks reais
+   - Mostrar contagem real de propostas por usuário
 
-```javascript
-const [createdProposalId, setCreatedProposalId] = useState<string | null>(null);
+#### Fase 2: Sistema de Convites Funcional
 
-const handleSaveDraft = async () => {
-  if (!validateForm()) return;
-  
-  // Se já criou uma proposta, redirecionar para edição
-  if (createdProposalId) {
-    navigate(`/proposals/${createdProposalId}/edit`);
-    return;
-  }
-  
-  // ... resto do código
-};
+1. **Criar Edge Function `send-invitation`**
+   - Gerar token único para convite
+   - Enviar email com link de convite (simulado inicialmente)
+   - Salvar convite no banco
 
-const handlePreview = async () => {
-  // ...
-  const result = await createProposal(...);
-  
-  if (result.data) {
-    setCreatedProposalId(result.data.id); // Marcar como criada
-    await previewPdf(result.data.id, previewWindow);
-  }
-  // ...
-};
-```
+2. **Atualizar página de Registro**
+   - Detectar token de convite na URL
+   - Pré-preencher email do convite
+   - Mostrar informações do convite (organização, role)
+
+#### Fase 3: Funcionalidades de Gestão
+
+1. **Alterar Role de Usuário** (apenas admin)
+   - Promover vendor para admin
+   - Rebaixar admin para vendor (exceto próprio)
+
+2. **Ativar/Desativar Usuário** (apenas admin)
+   - Desativar bloqueia acesso
+   - Mantém histórico de propostas
+
+3. **Cancelar/Reenviar Convites** (apenas admin)
 
 ---
 
-### Correção 3: Manter na Mesma Página ao Salvar Rascunho
+### Arquivos a Criar
 
-**Arquivo:** `src/pages/NewProposal.tsx`
+| Arquivo | Descrição |
+|---------|-----------|
+| `src/hooks/useUsers.ts` | Hook para gestão de usuários |
+| `src/hooks/useInvitations.ts` | Hook para gestão de convites |
+| `supabase/functions/send-invitation/index.ts` | Edge function para envio de convites |
 
-**Problema atual (linhas 209-211):**
-```javascript
-if (result.data) {
-  navigate('/proposals'); // Redireciona para lista
-}
-```
-
-**Solução para NewProposal:**
-Após criar a proposta com sucesso, navegar para a página de edição da proposta criada em vez de redirecionar para a lista:
-
-```javascript
-if (result.data) {
-  navigate(`/proposals/${result.data.id}/edit`);
-}
-```
-
-**Arquivo:** `src/pages/EditProposal.tsx`
-
-**Problema atual (linhas 278-280):**
-```javascript
-if (result.data) {
-  navigate(`/proposals/${id}`); // Redireciona para visualização
-}
-```
-
-**Solução para EditProposal:**
-Remover o redirecionamento e apenas mostrar um toast de sucesso:
-
-```javascript
-if (result.data) {
-  toast({
-    title: 'Proposta salva!',
-    description: 'As alterações foram salvas com sucesso.',
-  });
-}
-```
-
----
-
-### Resumo das Alterações
+### Arquivos a Modificar
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `supabase/functions/generate-pdf/index.ts` | Usar timezone `America/Sao_Paulo` nas funções de formatação de data |
-| `src/pages/NewProposal.tsx` | Adicionar estado para evitar duplicidade + navegar para página de edição após salvar |
-| `src/pages/EditProposal.tsx` | Remover redirecionamento ao salvar, apenas mostrar toast |
+| `src/pages/Users.tsx` | Remover mock, integrar com hooks |
+| `src/pages/Register.tsx` | Exibir informações do convite |
+
+---
+
+### Detalhes Técnicos
+
+#### Hook `useUsers.ts`
+
+```text
+Query principal:
+- JOIN profiles + user_roles
+- Filtrar por organization_id
+- Incluir contagem de propostas
+- Ordenar por nome
+
+Funções:
+- toggleUserActive(userId, active)
+- updateUserRole(userId, role)
+```
+
+#### Hook `useInvitations.ts`
+
+```text
+Query principal:
+- Buscar invitations WHERE status = 'pending'
+- Filtrar por organization_id
+
+Funções:
+- createInvitation(email, role)
+- resendInvitation(invitationId)
+- cancelInvitation(invitationId)
+```
+
+#### Edge Function `send-invitation`
+
+```text
+1. Recebe: { email, role }
+2. Gera token único (UUID)
+3. Calcula expiração (7 dias)
+4. Insere na tabela invitations
+5. Retorna link do convite
+```
+
+---
+
+### Fluxo do Sistema de Convites
+
+```text
+1. Admin clica "Enviar Convite"
+2. Preenche email e seleciona role
+3. Sistema gera token único
+4. Convite salvo com status "pending"
+5. Link de convite: /register?token=xxx&email=xxx
+
+6. Convidado acessa o link
+7. Completa cadastro (nome, senha)
+8. Trigger handle_new_user:
+   - Detecta convite válido pelo email
+   - Associa à organização
+   - Define role do convite
+   - Marca convite como "accepted"
+```
+
+---
+
+### Permissões e Segurança
+
+| Ação | Admin | Vendor |
+|------|-------|--------|
+| Ver lista de usuários | Sim | Sim |
+| Enviar convites | Sim | Nao |
+| Alterar roles | Sim | Nao |
+| Ativar/Desativar usuários | Sim | Nao |
+| Ver próprio perfil | Sim | Sim |
+
+---
+
+### Interface de Usuário
+
+**Cards de estatísticas** (dados reais):
+- Usuários Ativos
+- WhatsApp Conectados
+- Convites Pendentes
+
+**Tabela de Usuários**:
+- Avatar + Nome + Email
+- Role (com botão para alterar se admin)
+- Status WhatsApp
+- Contagem de propostas
+- Data de cadastro
+- Status (Ativo/Inativo)
+- Menu de ações (alterar role, ativar/desativar)
+
+**Seção de Convites Pendentes**:
+- Email do convidado
+- Role atribuído
+- Data de expiração
+- Botões: Reenviar | Cancelar
 
 ---
 
 ### Resultado Esperado
 
-1. A data no PDF será formatada com o fuso horário de Brasília
-2. Não haverá mais propostas duplicadas ao pré-visualizar e depois salvar
-3. Ao salvar rascunho, você permanecerá na mesma página (ou será redirecionado para a edição se for uma nova proposta)
+Após a implementação:
+
+1. A página de Usuários mostrará dados reais do banco
+2. Admin poderá convidar novos membros por email
+3. Convidados receberão link para cadastro
+4. Admin poderá gerenciar roles e status dos usuários
+5. Todo o histórico de propostas será mantido por usuário
