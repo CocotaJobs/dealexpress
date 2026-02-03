@@ -254,10 +254,27 @@ Deno.serve(async (req) => {
       }
     );
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'An error occurred';
+    const errorMessage = error instanceof Error ? error.message : 'Ocorreu um erro';
     console.error('Error in send-invitation:', error);
+    
+    // User-friendly error messages for known errors, generic for unknown
+    const userFriendlyMessages: Record<string, string> = {
+      'No authorization header': 'Não autorizado',
+      'Unauthorized': 'Não autorizado',
+      'Error checking permissions': 'Erro ao verificar permissões',
+      'Only admins can send invitations': 'Apenas administradores podem enviar convites',
+      'Could not determine organization': 'Não foi possível determinar a organização',
+      'Email and role are required': 'Email e função são obrigatórios',
+      'Invalid role. Must be admin or vendor': 'Função inválida. Deve ser admin ou vendor',
+      'Já existe um convite pendente para este email': 'Já existe um convite pendente para este email',
+      'Este email já está cadastrado na organização': 'Este email já está cadastrado na organização',
+      'Failed to create invitation': 'Falha ao criar convite',
+    };
+    
+    const safeMessage = userFriendlyMessages[errorMessage] || 'Erro ao processar solicitação';
+    
     return new Response(
-      JSON.stringify({ error: errorMessage }),
+      JSON.stringify({ error: safeMessage }),
       {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

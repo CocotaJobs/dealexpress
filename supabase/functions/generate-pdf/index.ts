@@ -343,7 +343,8 @@ async function convertDocxToPdfWithPdfCo(docxBuffer: Uint8Array, fileName: strin
   const PDFCO_API_KEY = Deno.env.get('PDFCO_API_KEY');
   
   if (!PDFCO_API_KEY) {
-    throw new Error('PDFCO_API_KEY is not configured');
+    console.error('PDFCO_API_KEY is not configured');
+    throw new Error('Serviço de conversão PDF indisponível');
   }
 
   console.log('Converting DOCX to PDF via PDF.co...');
@@ -368,14 +369,14 @@ async function convertDocxToPdfWithPdfCo(docxBuffer: Uint8Array, fileName: strin
   if (!uploadResponse.ok) {
     const errorText = await uploadResponse.text();
     console.error('PDF.co upload failed:', uploadResponse.status, errorText);
-    throw new Error(`PDF.co upload failed: ${uploadResponse.status} - ${errorText}`);
+    throw new Error('Falha ao processar arquivo para conversão');
   }
 
   const uploadData = await uploadResponse.json();
   
   if (uploadData.error) {
     console.error('PDF.co upload error:', uploadData.message);
-    throw new Error(`PDF.co upload error: ${uploadData.message}`);
+    throw new Error('Falha ao processar arquivo para conversão');
   }
 
   const uploadedFileUrl = uploadData.url;
@@ -398,14 +399,14 @@ async function convertDocxToPdfWithPdfCo(docxBuffer: Uint8Array, fileName: strin
   if (!convertResponse.ok) {
     const errorText = await convertResponse.text();
     console.error('PDF.co conversion failed:', convertResponse.status, errorText);
-    throw new Error(`PDF.co conversion failed: ${convertResponse.status} - ${errorText}`);
+    throw new Error('Falha ao converter documento para PDF');
   }
 
   const convertData = await convertResponse.json();
   
   if (convertData.error) {
     console.error('PDF.co conversion error:', convertData.message);
-    throw new Error(`PDF.co conversion error: ${convertData.message}`);
+    throw new Error('Falha ao converter documento para PDF');
   }
 
   console.log('DOCX converted to PDF successfully via PDF.co');
@@ -414,7 +415,8 @@ async function convertDocxToPdfWithPdfCo(docxBuffer: Uint8Array, fileName: strin
   const pdfResponse = await fetch(convertData.url);
   
   if (!pdfResponse.ok) {
-    throw new Error(`Failed to download converted PDF: ${pdfResponse.status}`);
+    console.error('Failed to download converted PDF:', pdfResponse.status);
+    throw new Error('Falha ao baixar PDF convertido');
   }
 
   const pdfArrayBuffer = await pdfResponse.arrayBuffer();
@@ -788,7 +790,7 @@ Deno.serve(async (req) => {
     if (proposalError || !proposal) {
       console.error('Proposal not found:', proposalError);
       return new Response(
-        JSON.stringify({ error: 'Proposal not found' }),
+        JSON.stringify({ error: 'Proposta não encontrada' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -904,9 +906,9 @@ Deno.serve(async (req) => {
       } catch (templateProcessError) {
         console.error('Error processing custom template:', templateProcessError);
         
-        // Extract useful error message for the user
+        // Extract useful error message for the user (without exposing internal details)
         let errorMessage = 'Erro ao processar template';
-        let errorDetails = String(templateProcessError);
+        let errorDetails = 'Verifique se o template está formatado corretamente.';
         
         // deno-lint-ignore no-explicit-any
         const tplError = templateProcessError as any;
@@ -914,8 +916,10 @@ Deno.serve(async (req) => {
           const errors = tplError.properties.errors;
           const firstError = errors[0];
           if (firstError?.properties?.xtag) {
-            errorMessage = `Erro na tag: "${firstError.properties.xtag}"`;
-            errorDetails = `${firstError.properties.explanation || 'Tag malformada'}. Dica: Abra o template Word, delete completamente a tag e digite-a novamente de uma só vez, sem pausas.`;
+            // Sanitize tag name - only show first 20 chars max
+            const tagName = String(firstError.properties.xtag).substring(0, 20);
+            errorMessage = `Erro na tag do template`;
+            errorDetails = `Verifique a tag "${tagName}". Dica: Abra o template Word, delete completamente a tag e digite-a novamente de uma só vez, sem pausas.`;
           }
         }
         
@@ -953,7 +957,7 @@ Deno.serve(async (req) => {
     if (uploadError) {
       console.error('Error uploading PDF:', uploadError);
       return new Response(
-        JSON.stringify({ error: 'Failed to save PDF', details: uploadError.message }),
+        JSON.stringify({ error: 'Falha ao salvar PDF' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -986,7 +990,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error('Error generating PDF:', error);
     return new Response(
-      JSON.stringify({ error: 'Internal server error', details: String(error) }),
+      JSON.stringify({ error: 'Erro ao gerar PDF' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
