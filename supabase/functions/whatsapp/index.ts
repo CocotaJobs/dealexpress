@@ -440,9 +440,20 @@ async function handleSendMessage(
 
   // Format phone number (remove non-digits and add country code if needed)
   let formattedPhone = phone.replace(/\D/g, '');
-  if (!formattedPhone.startsWith('55')) {
+  
+  // Brazilian phone numbers:
+  // - With country code: 12-13 digits (55 + 2-digit DDD + 8-9 digit number)
+  // - Without country code: 10-11 digits (2-digit DDD + 8-9 digit number)
+  // Only consider it already has the country code if:
+  // 1. Starts with 55, AND
+  // 2. Has 12 or more digits (indicating 55 is the country code, not the DDD)
+  const hasCountryCode = formattedPhone.startsWith('55') && formattedPhone.length >= 12;
+
+  if (!hasCountryCode) {
     formattedPhone = '55' + formattedPhone;
   }
+  
+  console.log(`Phone formatted: ${phone} -> ${formattedPhone}`);
 
   if (mediaUrl && mediaType) {
     // Send media message
