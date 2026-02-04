@@ -83,7 +83,7 @@ export function useDashboardMetrics() {
         supabase.from('proposals').select('id, status, created_at'),
         supabase.from('proposal_items').select('item_name, subtotal, proposal_id'),
         supabase.from('items').select('id, active'),
-        supabase.from('profiles').select('id, active'),
+        supabase.from('profiles_safe').select('id, active'),
         supabase.from('templates').select('id, is_active'),
       ]);
 
