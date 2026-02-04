@@ -1,86 +1,81 @@
 
-# Plano de Correção de Dados do Usuário André Rocha
+
+# Correção do Bug de Formatação de Números com DDD 55
 
 ## Problema Identificado
 
-O usuário **André Rocha** (andre.p@jvfmaquinas.com.br) foi registrado incorretamente:
+Quando um número de telefone tem **DDD 55** (como nas cidades de Santa Maria, Uruguaiana, etc.), a lógica atual interpreta incorretamente o DDD como sendo o código do país Brasil (+55).
 
-| Campo | Valor Atual (Errado) | Valor Correto |
-|-------|---------------------|---------------|
-| Organização | `André Rocha's Organization` | `João Vitor Felipe's Organization` |
-| Role | `admin` | `vendor` |
-| ID Org | `7d3d5e71-ef49-...` | `9940b4bb-3ffb-...` |
+### Exemplo do Bug
 
-## Causa Raiz
+| Número do Cliente | Após Limpar | Lógica Atual | Resultado Enviado | Correto? |
+|---|---|---|---|---|
+| (47) 98853-0718 | `47988530718` | Não começa com 55 → adiciona | `5547988530718` | ✓ |
+| (55) 99123-4567 | `5599123456` | Já começa com 55 → não adiciona | `5599123456` | ✗ |
 
-O token de convite **não foi passado corretamente** durante o registro. Isso pode ter acontecido porque:
-1. O usuário acessou a página de registro diretamente (sem usar o link do convite)
-2. Os parâmetros da URL foram perdidos durante a navegação
+O número com DDD 55 fica com apenas 10-11 dígitos quando deveria ter 12-13, causando falha no envio.
 
-## Solução: Migração SQL
+## Solução
 
-Vou criar uma migração SQL que:
+Melhorar a lógica de formatação para detectar corretamente se o número já inclui o código do país, baseando-se no **tamanho do número** ao invés de apenas verificar se começa com "55".
 
-1. **Move o usuário André para a organização correta** (JVF Máquinas)
-2. **Altera o role de admin para vendor**
-3. **Marca o convite como aceito**
-4. **Exclui a organização órfã** que foi criada automaticamente
+### Lógica Corrigida
 
-```text
-ANTES:
-┌─────────────────────┐     ┌─────────────────────────────┐
-│ André Rocha's Org   │     │ João Vitor Felipe's Org     │
-│ (órfã, 0 items)     │     │ (8 templates, 2 items)      │
-├─────────────────────┤     ├─────────────────────────────┤
-│ - André (admin) ✗   │     │ - João Vitor Felipe (admin) │
-└─────────────────────┘     │ - João Vitor (vendor) ✓     │
-                            └─────────────────────────────┘
+Números brasileiros válidos:
+- **Com código do país**: 12-13 dígitos (55 + DDD 2 dígitos + número 8-9 dígitos)
+- **Sem código do país**: 10-11 dígitos (DDD 2 dígitos + número 8-9 dígitos)
 
-DEPOIS:
-┌─────────────────────────────┐
-│ João Vitor Felipe's Org     │
-│ (8 templates, 2 items)      │
-├─────────────────────────────┤
-│ - João Vitor Felipe (admin) │
-│ - João Vitor (vendor)       │
-│ - André Rocha (vendor) ✓    │
-└─────────────────────────────┘
+```
+SE comprimento >= 12 E começa com "55" → já tem código do país
+SENÃO → adicionar "55"
 ```
 
 ## Arquivos a Modificar
 
-1. **Nova migração SQL** - Corrigir os dados do usuário André
+| Arquivo | Alteração |
+|---------|-----------|
+| `supabase/functions/whatsapp/index.ts` | Corrigir lógica na função `handleSendMessage` |
 
-## SQL a Executar
+## Código Atual vs Novo
 
-```sql
--- Corrigir o usuário André Rocha
--- 1. Mover para a organização correta
-UPDATE profiles
-SET organization_id = '9940b4bb-3ffb-424f-9e92-149ec008d423'
-WHERE id = 'b2a8074a-0b9f-459b-aef7-9d25a0ad1013';
-
--- 2. Alterar role de admin para vendor
-UPDATE user_roles
-SET role = 'vendor'
-WHERE user_id = 'b2a8074a-0b9f-459b-aef7-9d25a0ad1013';
-
--- 3. Marcar o convite como aceito
-UPDATE invitations
-SET status = 'accepted', accepted_at = NOW()
-WHERE email = 'andre.p@jvfmaquinas.com.br'
-  AND organization_id = '9940b4bb-3ffb-424f-9e92-149ec008d423';
-
--- 4. Excluir a organização órfã
-DELETE FROM organizations
-WHERE id = '7d3d5e71-ef49-4fc0-8eaa-2aaa51e62fa9';
+### Atual (com bug)
+```typescript
+let formattedPhone = phone.replace(/\D/g, '');
+if (!formattedPhone.startsWith('55')) {
+  formattedPhone = '55' + formattedPhone;
+}
 ```
 
-## Resultado Esperado
+### Corrigido
+```typescript
+let formattedPhone = phone.replace(/\D/g, '');
 
-Após a migração:
-- André Rocha aparecerá na lista de usuários da organização JVF Máquinas
-- André terá acesso aos 8 templates e 2 itens existentes
-- O role de André será `vendor` (vendedor)
-- A organização órfã será removida
-- O convite original será marcado como aceito
+// Números brasileiros válidos:
+// - Com código do país: 12-13 dígitos (55 + DDD + número)
+// - Sem código do país: 10-11 dígitos (DDD + número)
+// Só considera que já tem código do país se:
+// 1. Começa com 55, E
+// 2. Tem 12 ou mais dígitos (indicando que 55 é código do país, não DDD)
+const hasCountryCode = formattedPhone.startsWith('55') && formattedPhone.length >= 12;
+
+if (!hasCountryCode) {
+  formattedPhone = '55' + formattedPhone;
+}
+
+console.log(`Phone formatted: ${phone} -> ${formattedPhone}`);
+```
+
+## Exemplos Após Correção
+
+| Número Original | Dígitos | Começa com 55? | Tem ≥12 dígitos? | Resultado |
+|---|---|---|---|---|
+| (47) 98853-0718 | 11 | Não | - | `5547988530718` ✓ |
+| (55) 99123-4567 | 11 | Sim | Não (11) | `555599123456` ✓ |
+| 5547988530718 | 13 | Sim | Sim (13) | `5547988530718` ✓ |
+
+## Passos de Implementação
+
+1. Atualizar a função `handleSendMessage` em `supabase/functions/whatsapp/index.ts`
+2. Adicionar logging para debug
+3. Fazer deploy da Edge Function atualizada
+
