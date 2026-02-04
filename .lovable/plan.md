@@ -228,14 +228,15 @@ const templateData = {
 
 ---
 
-## Resumo das Entregas
+## Status de Implementação
 
-| # | Entrega | Complexidade |
-|---|---------|--------------|
-| 1 | Migração SQL para novas colunas | Baixa |
-| 2 | Hook useProposals atualizado | Média |
-| 3 | UI de desconto com toggle %/R$ | Média |
-| 4 | UI de frete na proposta | Baixa |
-| 5 | Configurações de frete padrão (admin) | Baixa |
-| 6 | Edge Function com campo {frete} | Baixa |
-| 7 | Atualizar documentação de campos do template | Baixa |
+| # | Entrega | Status |
+|---|---------|--------|
+| 1 | Migração SQL para novas colunas | ✅ Concluído |
+| 2 | Hook useProposals atualizado | ✅ Concluído |
+| 3 | UI de desconto com toggle %/R$ | ✅ Concluído |
+| 4 | UI de frete na proposta | ✅ Concluído |
+| 5 | Configurações de frete padrão (admin) | ✅ Concluído |
+| 6 | Edge Function com campo {frete} | ✅ Concluído |
+| 7 | Hook useOrganizationSettings | ✅ Concluído |
+| 8 | Componentes DiscountTypeToggle e ShippingField | ✅ Concluído |

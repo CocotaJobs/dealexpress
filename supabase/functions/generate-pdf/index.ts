@@ -35,10 +35,11 @@ interface ProposalData {
     validity_days: number;
     created_at: string;
     expires_at?: string;
+    shipping?: string;
   };
   items: ProposalItem[];
   vendor?: { name: string; email: string } | null;
-  organization?: { name: string } | null;
+  organization?: { name: string; default_shipping?: string } | null;
   totalValue: number;
 }
 
@@ -249,6 +250,8 @@ async function processDocxTemplate(
     condicoes_pagamento: proposal.payment_conditions || '',
     validade_proposta: proposal.expires_at ? formatDate(proposal.expires_at) : '',
     validade_dias: String(proposal.validity_days),
+    // Shipping field - use proposal.shipping if set, otherwise fall back to organization default
+    frete: proposal.shipping || organization?.default_shipping || 'A combinar',
     // Loop array for dynamic items
     itens: itensArray,
   };
@@ -818,10 +821,10 @@ Deno.serve(async (req) => {
       .eq('id', proposal.created_by)
       .single();
 
-    // Fetch organization
+    // Fetch organization (include default_shipping)
     const { data: organization } = await supabaseAdmin
       .from('organizations')
-      .select('name')
+      .select('name, default_shipping')
       .eq('id', proposal.organization_id)
       .single();
 

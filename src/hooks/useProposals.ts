@@ -18,14 +18,32 @@ export interface ProposalWithItems extends Proposal {
   total_value?: number;
 }
 
+export type DiscountType = 'percentage' | 'fixed';
+
 export interface ProposalItemFormData {
   item_id: string;
   item_name: string;
   item_price: number;
   quantity: number;
   discount: number;
+  discount_type: DiscountType;
   subtotal: number;
   max_discount?: number;
+}
+
+// Helper function to calculate subtotal based on discount type
+export function calculateSubtotal(
+  quantity: number,
+  price: number,
+  discount: number,
+  discountType: DiscountType
+): number {
+  const baseValue = quantity * price;
+  if (discountType === 'percentage') {
+    return baseValue * (1 - discount / 100);
+  }
+  // fixed discount
+  return Math.max(0, baseValue - discount);
 }
 
 export function useProposals() {
@@ -123,6 +141,7 @@ export function useProposals() {
           item_price: item.item_price,
           quantity: item.quantity,
           discount: item.discount,
+          discount_type: item.discount_type,
           subtotal: item.subtotal,
         }));
 
@@ -183,6 +202,7 @@ export function useProposals() {
             item_price: item.item_price,
             quantity: item.quantity,
             discount: item.discount,
+            discount_type: item.discount_type,
             subtotal: item.subtotal,
           }));
 
@@ -306,6 +326,7 @@ export function useProposals() {
           item_price: Number(item.item_price),
           quantity: item.quantity,
           discount: Number(item.discount),
+          discount_type: (item.discount_type as DiscountType) || 'percentage',
           subtotal: Number(item.subtotal),
         }))
       );

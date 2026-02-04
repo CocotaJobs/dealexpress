@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,13 +7,24 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, User, Save } from 'lucide-react';
+import { useOrganizationSettings } from '@/hooks/useOrganizationSettings';
+import { Loader2, User, Save, Truck, Building } from 'lucide-react';
 
 export default function Settings() {
   const { profile, refreshProfile } = useAuth();
   const { toast } = useToast();
+  const { settings: orgSettings, updateDefaultShipping, isLoading: orgLoading } = useOrganizationSettings();
   const [isLoading, setIsLoading] = useState(false);
+  const [isShippingLoading, setIsShippingLoading] = useState(false);
   const [name, setName] = useState(profile?.name || '');
+  const [defaultShipping, setDefaultShipping] = useState('');
+
+  // Sync default shipping from org settings
+  useEffect(() => {
+    if (orgSettings?.default_shipping !== undefined) {
+      setDefaultShipping(orgSettings.default_shipping || '');
+    }
+  }, [orgSettings]);
 
   const getInitials = (name: string) => {
     return name
@@ -55,6 +66,15 @@ export default function Settings() {
       setIsLoading(false);
     }
   };
+
+  const handleShippingSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsShippingLoading(true);
+    await updateDefaultShipping(defaultShipping);
+    setIsShippingLoading(false);
+  };
+
+  const isAdmin = profile?.role === 'admin';
 
   return (
     <div className="space-y-6">
@@ -133,6 +153,54 @@ export default function Settings() {
             </form>
           </CardContent>
         </Card>
+
+        {/* Organization Settings - Admin Only */}
+        {isAdmin && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building className="h-5 w-5" />
+                Configurações da Organização
+              </CardTitle>
+              <CardDescription>
+                Configurações padrão que afetam todas as propostas
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleShippingSubmit} className="space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="defaultShipping" className="flex items-center gap-2">
+                    <Truck className="h-4 w-4" />
+                    Frete Padrão
+                  </Label>
+                  <Input
+                    id="defaultShipping"
+                    value={defaultShipping}
+                    onChange={(e) => setDefaultShipping(e.target.value)}
+                    placeholder="Ex: A combinar, Grátis, R$ 150,00"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Valor padrão para o campo de frete nas propostas. Será usado quando o vendedor não especificar.
+                  </p>
+                </div>
+
+                <Button type="submit" disabled={isShippingLoading || orgLoading}>
+                  {isShippingLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Salvando...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 h-4 w-4" />
+                      Salvar Configuração
+                    </>
+                  )}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

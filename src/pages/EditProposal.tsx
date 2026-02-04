@@ -40,11 +40,14 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useItems } from '@/hooks/useItems';
-import { useProposals, ProposalItemFormData } from '@/hooks/useProposals';
+import { useProposals, ProposalItemFormData, DiscountType, calculateSubtotal } from '@/hooks/useProposals';
+import { useOrganizationSettings } from '@/hooks/useOrganizationSettings';
 import { usePdfGeneration } from '@/hooks/usePdfGeneration';
 import { useAuth } from '@/contexts/AuthContext';
 import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
+import { DiscountTypeToggle } from '@/components/proposals/DiscountTypeToggle';
+import { ShippingField } from '@/components/proposals/ShippingField';
 
 export default function EditProposal() {
   const { id } = useParams<{ id: string }>();
@@ -53,6 +56,7 @@ export default function EditProposal() {
   const { profile } = useAuth();
   const { items, isLoading: itemsLoading } = useItems();
   const { updateProposal, sendProposal } = useProposals();
+  const { defaultShipping } = useOrganizationSettings();
   const { isGenerating, generatePdf, previewPdf, openPdfPreviewWindow } = usePdfGeneration();
 
   const [isItemDialogOpen, setIsItemDialogOpen] = useState(false);
@@ -77,6 +81,7 @@ export default function EditProposal() {
   // Commercial conditions
   const [paymentConditions, setPaymentConditions] = useState('');
   const [validityDays, setValidityDays] = useState(15);
+  const [shipping, setShipping] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -120,14 +125,16 @@ export default function EditProposal() {
       setClientAddress(proposal.client_address || '');
       setPaymentConditions(proposal.payment_conditions || '');
       setValidityDays(proposal.validity_days);
+      setShipping(proposal.shipping || null);
 
       setProposalItems(
-        (itemsData || []).map((item) => ({
+        (itemsData || []).map((item): ProposalItemFormData => ({
           item_id: item.item_id || '',
           item_name: item.item_name,
           item_price: Number(item.item_price),
           quantity: item.quantity,
           discount: Number(item.discount),
+          discount_type: (item.discount_type as DiscountType) || 'percentage',
           subtotal: Number(item.subtotal),
         }))
       );
@@ -155,30 +162,30 @@ export default function EditProposal() {
   const addItem = (item: (typeof activeItems)[0]) => {
     const existingItem = proposalItems.find((pi) => pi.item_id === item.id);
     if (existingItem) {
+      const newQuantity = existingItem.quantity + 1;
       setProposalItems(
         proposalItems.map((pi) =>
           pi.item_id === item.id
             ? {
                 ...pi,
-                quantity: pi.quantity + 1,
-                subtotal: (pi.quantity + 1) * pi.item_price * (1 - pi.discount / 100),
+                quantity: newQuantity,
+                subtotal: calculateSubtotal(newQuantity, pi.item_price, pi.discount, pi.discount_type),
               }
             : pi
         )
       );
     } else {
-      setProposalItems([
-        ...proposalItems,
-        {
-          item_id: item.id,
-          item_name: item.name,
-          item_price: Number(item.price),
-          quantity: 1,
-          discount: 0,
-          max_discount: item.max_discount,
-          subtotal: Number(item.price),
-        },
-      ]);
+      const newItem: ProposalItemFormData = {
+        item_id: item.id,
+        item_name: item.name,
+        item_price: Number(item.price),
+        quantity: 1,
+        discount: 0,
+        discount_type: 'percentage',
+        max_discount: item.max_discount,
+        subtotal: Number(item.price),
+      };
+      setProposalItems([...proposalItems, newItem]);
     }
     setIsItemDialogOpen(false);
     setItemSearch('');
@@ -192,25 +199,51 @@ export default function EditProposal() {
           ? {
               ...item,
               quantity,
-              subtotal: quantity * item.item_price * (1 - item.discount / 100),
+              subtotal: calculateSubtotal(quantity, item.item_price, item.discount, item.discount_type),
             }
           : item
       )
     );
   };
 
-  const updateItemDiscount = (item_id: string, discount: number) => {
-    if (discount < 0 || discount > 100) return;
+  const updateItemDiscount = (item_id: string, discount: number, discountType?: DiscountType) => {
     setProposalItems(
-      proposalItems.map((item) =>
-        item.item_id === item_id
-          ? {
-              ...item,
-              discount,
-              subtotal: item.quantity * item.item_price * (1 - discount / 100),
-            }
-          : item
-      )
+      proposalItems.map((item) => {
+        if (item.item_id !== item_id) return item;
+        
+        const newDiscountType = discountType ?? item.discount_type;
+        
+        // Validate discount based on type
+        let validDiscount = discount;
+        if (newDiscountType === 'percentage') {
+          validDiscount = Math.max(0, Math.min(100, discount));
+        } else {
+          validDiscount = Math.max(0, discount);
+        }
+        
+        return {
+          ...item,
+          discount: validDiscount,
+          discount_type: newDiscountType,
+          subtotal: calculateSubtotal(item.quantity, item.item_price, validDiscount, newDiscountType),
+        };
+      })
+    );
+  };
+
+  const updateItemDiscountType = (item_id: string, discountType: DiscountType) => {
+    setProposalItems(
+      proposalItems.map((item) => {
+        if (item.item_id !== item_id) return item;
+        
+        // Reset discount to 0 when switching type to avoid confusion
+        return {
+          ...item,
+          discount: 0,
+          discount_type: discountType,
+          subtotal: item.quantity * item.item_price, // No discount
+        };
+      })
     );
   };
 
@@ -270,6 +303,7 @@ export default function EditProposal() {
         client_address: clientAddress.trim() || null,
         payment_conditions: paymentConditions.trim() || null,
         validity_days: validityDays,
+        shipping: shipping,
       },
       proposalItems
     );
@@ -320,6 +354,7 @@ export default function EditProposal() {
         client_address: clientAddress.trim() || null,
         payment_conditions: paymentConditions.trim() || null,
         validity_days: validityDays,
+        shipping: shipping,
       },
       proposalItems
     );
@@ -380,6 +415,7 @@ export default function EditProposal() {
         client_address: clientAddress.trim() || null,
         payment_conditions: paymentConditions.trim() || null,
         validity_days: validityDays,
+        shipping: shipping,
       },
       proposalItems
     );
@@ -656,9 +692,9 @@ export default function EditProposal() {
                   <TableHeader>
                     <TableRow className="bg-muted/50">
                       <TableHead>Descrição</TableHead>
-                      <TableHead className="w-[100px] text-center">Qtd</TableHead>
-                      <TableHead className="w-[120px] text-right">Valor Unit.</TableHead>
-                      <TableHead className="w-[100px] text-center">Desc. (%)</TableHead>
+                      <TableHead className="w-[80px] text-center">Qtd</TableHead>
+                      <TableHead className="w-[100px] text-right">Valor Unit.</TableHead>
+                      <TableHead className="w-[160px]">Desconto</TableHead>
                       <TableHead className="w-[120px] text-right">Subtotal</TableHead>
                       <TableHead className="w-[50px]"></TableHead>
                     </TableRow>
@@ -669,7 +705,7 @@ export default function EditProposal() {
                         <TableCell>
                           <div>
                             <p className="font-medium">{item.item_name}</p>
-                            {item.max_discount !== undefined && item.max_discount > 0 && (
+                            {item.discount_type === 'percentage' && item.max_discount !== undefined && item.max_discount > 0 && (
                               <p className="text-xs text-muted-foreground">
                                 Desconto máx.: {item.max_discount}%
                               </p>
@@ -691,27 +727,29 @@ export default function EditProposal() {
                           {formatCurrency(item.item_price)}
                         </TableCell>
                         <TableCell>
-                          <div className="relative">
+                          <div className="flex items-center gap-1">
+                            <DiscountTypeToggle
+                              value={item.discount_type}
+                              onChange={(type) => updateItemDiscountType(item.item_id, type)}
+                            />
                             <Input
                               type="number"
                               min="0"
-                              max={item.max_discount || 100}
+                              max={item.discount_type === 'percentage' ? (item.max_discount || 100) : undefined}
+                              step={item.discount_type === 'fixed' ? '0.01' : '1'}
                               value={item.discount}
                               onChange={(e) =>
-                                updateItemDiscount(
-                                  item.item_id,
-                                  Math.min(
-                                    parseFloat(e.target.value) || 0,
-                                    item.max_discount || 100
-                                  )
-                                )
+                                updateItemDiscount(item.item_id, parseFloat(e.target.value) || 0)
                               }
-                              className="h-8 text-center pr-6"
+                              className={`w-20 h-8 ${
+                                item.discount_type === 'percentage' && item.max_discount !== undefined && item.discount > item.max_discount
+                                  ? 'border-warning'
+                                  : ''
+                              }`}
                             />
-                            {item.max_discount !== undefined &&
-                              item.discount > item.max_discount && (
-                                <AlertTriangle className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-warning" />
-                              )}
+                            {item.discount_type === 'percentage' && item.max_discount !== undefined && item.discount > item.max_discount && (
+                              <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0" />
+                            )}
                           </div>
                         </TableCell>
                         <TableCell className="text-right font-semibold">
@@ -762,6 +800,13 @@ export default function EditProposal() {
                   value={validityDays}
                   onChange={(e) => setValidityDays(parseInt(e.target.value) || 15)}
                   className="w-32"
+                />
+              </div>
+              <div className="border-t pt-4">
+                <ShippingField
+                  defaultShipping={defaultShipping}
+                  value={shipping}
+                  onChange={setShipping}
                 />
               </div>
             </CardContent>
