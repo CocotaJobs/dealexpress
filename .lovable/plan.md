@@ -1,103 +1,241 @@
 
-# Correção Definitiva dos Alertas de Segurança
+# Plano de Implementação: Desconto por Valor e Campo de Frete
 
-## Problema Identificado
+## Visão Geral
 
-O scan de segurança detecta repetidamente os mesmos alertas porque:
+Duas novas funcionalidades para evitar valores quebrados e incluir informações de frete nas propostas:
 
-1. **profiles_safe** e **invitations_safe** existem como views com `security_invoker = on`, mas o scanner as detecta como "RLS habilitado sem políticas"
-2. O frontend, em alguns lugares, ainda consulta diretamente a tabela `profiles` ao invés da view `profiles_safe`
-3. O código de `useDashboardMetrics.ts` e `AuthContext.tsx` acessa `profiles` diretamente
+1. **Desconto por Valor Fixo**: Opção de aplicar desconto como valor em R$ (além da porcentagem atual)
+2. **Campo de Frete**: Novo campo dinâmico `{frete}` nos templates, com valor padrão configurável e personalização por proposta
 
-## Análise Técnica
+---
 
-| Problema | Local | Causa |
-|----------|-------|-------|
-| Views aparecem "sem políticas" | `profiles_safe`, `invitations_safe` | Views com `security_invoker=on` herdam RLS da tabela base, mas o scanner não reconhece |
-| Email exposto | `AuthContext.tsx`, `useUsers.ts` | Lógica de privacidade implementada na view, mas consultas diretas à tabela |
-| Dashboard acessa profiles | `useDashboardMetrics.ts` | Consulta `profiles` diretamente para contar usuários |
+## Funcionalidade 1: Desconto por Valor Fixo
 
-## Solução
+### Problema Atual
+O vendedor só consegue aplicar desconto em porcentagem. Quando o valor resultante fica quebrado (ex: R$ 1.234,57), ele precisa fazer cálculos mentais para encontrar a porcentagem exata que gera um valor redondo.
 
-### 1. Frontend: Padronizar Uso das Views Seguras
+### Solução
+Adicionar um toggle para escolher entre "Desconto em %" ou "Desconto em R$".
 
-Atualizar os arquivos que consultam `profiles` diretamente para usar `profiles_safe`:
+### Alterações no Banco de Dados
+
+| Tabela | Coluna | Tipo | Descrição |
+|--------|--------|------|-----------|
+| `proposal_items` | `discount_type` | `TEXT` | `'percentage'` (padrão) ou `'fixed'` |
+
+### Lógica de Cálculo
+
+```text
+SE discount_type = 'percentage':
+   subtotal = quantidade * preco_unitario * (1 - desconto / 100)
+SENÃO (discount_type = 'fixed'):
+   subtotal = (quantidade * preco_unitario) - desconto
+```
+
+### Interface do Usuário
+
+Alterar a coluna "Desconto (%)" na tabela de itens:
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ Item          │ Qtd │ Preço    │ Desconto       │ Subtotal  │
+├─────────────────────────────────────────────────────────────┤
+│ Produto X     │ 2   │ R$ 500   │ [%|R$] [50___] │ R$ 950,00 │
+│ Produto Y     │ 1   │ R$ 1.200 │ [%|R$] [10___] │ R$ 1.080  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+O vendedor clica em `%` ou `R$` para alternar o tipo de desconto.
+
+---
+
+## Funcionalidade 2: Campo de Frete nas Propostas
+
+### Estrutura
+
+1. **Frete Padrão** (configurado por organização): Valor que será usado como padrão quando o vendedor não especificar
+2. **Frete da Proposta** (personalizado): O vendedor pode sobrescrever o valor padrão ao criar/editar uma proposta
+
+### Alterações no Banco de Dados
+
+| Tabela | Coluna | Tipo | Descrição |
+|--------|--------|------|-----------|
+| `organizations` | `default_shipping` | `TEXT` | Texto padrão para o frete (ex: "A combinar", "Grátis", "R$ 150,00") |
+| `proposals` | `shipping` | `TEXT` | Valor do frete específico desta proposta (pode ser null para usar o padrão) |
+
+### Novo Campo Dinâmico no Template
+
+| Campo | Descrição |
+|-------|-----------|
+| `{frete}` | Valor do frete da proposta (ou padrão da organização se não especificado) |
+
+### Interface - Configurações (Admin)
+
+Adicionar seção "Frete Padrão" na página de Configurações:
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ Configurações da Organização                                │
+├─────────────────────────────────────────────────────────────┤
+│ Frete Padrão: [_____________________________]               │
+│ Será usado quando não for especificado na proposta          │
+│ Ex: "A combinar", "Grátis", "R$ 150,00"                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Interface - Nova Proposta / Editar Proposta
+
+Adicionar campo na seção "Condições Comerciais":
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ Condições Comerciais                                        │
+├─────────────────────────────────────────────────────────────┤
+│ Condições de Pagamento: [___________________________]       │
+│                                                             │
+│ Frete:                                                      │
+│ (•) Usar padrão: "A combinar"                               │
+│ ( ) Personalizado: [___________________________]            │
+│                                                             │
+│ Validade da Proposta: [15_] dias                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Arquivos a Modificar
+
+### Banco de Dados (Migração SQL)
+
+| Alteração | Descrição |
+|-----------|-----------|
+| `ALTER TABLE proposal_items ADD COLUMN discount_type TEXT DEFAULT 'percentage'` | Tipo de desconto |
+| `ALTER TABLE organizations ADD COLUMN default_shipping TEXT DEFAULT 'A combinar'` | Frete padrão |
+| `ALTER TABLE proposals ADD COLUMN shipping TEXT` | Frete personalizado |
+
+### Frontend
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/hooks/useDashboardMetrics.ts` | Trocar `profiles` por `profiles_safe` |
-| `src/contexts/AuthContext.tsx` | Manter consulta a `profiles` (é o próprio usuário, permitido por RLS) |
-| `src/pages/Settings.tsx` | Manter consulta a `profiles` (update do próprio perfil) |
+| `src/hooks/useProposals.ts` | Adicionar `discount_type` no `ProposalItemFormData` e `shipping` nos dados da proposta |
+| `src/pages/NewProposal.tsx` | UI para tipo de desconto + campo de frete |
+| `src/pages/EditProposal.tsx` | UI para tipo de desconto + campo de frete |
+| `src/pages/Settings.tsx` | Seção para configurar frete padrão da organização (apenas admin) |
+| `src/contexts/AuthContext.tsx` | Buscar `default_shipping` da organização |
 
-### 2. Backend: Marcar os Alertas como Resolvidos
+### Edge Function
 
-Os alertas são falsos positivos para este modelo de segurança:
+| Arquivo | Alteração |
+|---------|-----------|
+| `supabase/functions/generate-pdf/index.ts` | Adicionar campo `{frete}` nos dados do template |
 
-- **Views com `security_invoker=on`** herdam RLS da tabela base - não precisam de políticas próprias
-- **Convites e Propostas** têm RLS configurado corretamente com acesso restrito
+---
 
-Marcarei os alertas como "ignorados" com justificativa técnica documentada.
+## Fluxo de Dados
 
-## Alterações
-
-### Arquivo 1: `src/hooks/useDashboardMetrics.ts`
-- Linha 86: Trocar `.from('profiles')` por `.from('profiles_safe')`
-- A contagem de usuários funcionará normalmente pois `profiles_safe` herda RLS
-
-### Arquivo 2: Marcar findings de segurança como resolvidos
-
-Usar a ferramenta `manage_security_finding` para:
-
-1. **profiles_table_email_exposure** - Marcar como ignorado (view `profiles_safe` já oculta emails de não-admins)
-2. **invitation_token_exposure** - Marcar como ignorado (tokens só são acessados via Edge Function, não expostos ao frontend)
-3. **customer_contact_vendor_access** - Marcar como ignorado (vendedores precisam dos dados de contato dos próprios clientes para trabalhar)
-4. **invitations_safe_no_policies** - Marcar como ignorado (view usa `security_invoker=on`, herda RLS da tabela base)
-5. **profiles_safe_no_policies** - Marcar como ignorado (view usa `security_invoker=on`, herda RLS da tabela base)
-
-## Arquitetura de Segurança Final
+### Frete
 
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│                         FRONTEND                                │
-├─────────────────────────────────────────────────────────────────┤
-│  useUsers.ts ──────► profiles_safe (view)                       │
-│  useDashboardMetrics ──► profiles_safe (view)                   │
-│  useInvitations ───► invitations_safe (view)                    │
-│  AuthContext ──────► profiles (próprio usuário, permitido RLS)  │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                       VIEWS SEGURAS                             │
-├─────────────────────────────────────────────────────────────────┤
-│  profiles_safe (security_invoker=on)                            │
-│   ├─ Herda RLS de profiles                                      │
-│   ├─ Oculta whatsapp_session_id                                 │
-│   └─ Email visível apenas para: próprio usuário OU admin        │
-│                                                                 │
-│  invitations_safe (security_invoker=on)                         │
-│   ├─ Herda RLS de invitations                                   │
-│   └─ Oculta token (só acessível via Edge Function)              │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    TABELAS BASE (RLS ativo)                     │
-├─────────────────────────────────────────────────────────────────┤
-│  profiles: SELECT restrito à organization_id                    │
-│  invitations: SELECT apenas para admins                         │
-│  proposals: SELECT para criador OU admin                        │
-└─────────────────────────────────────────────────────────────────┘
+1. Admin configura frete padrão em Configurações
+   → Salva em organizations.default_shipping
+
+2. Vendedor cria proposta
+   → Se "Usar padrão" marcado: proposals.shipping = NULL
+   → Se "Personalizado": proposals.shipping = valor digitado
+
+3. PDF é gerado
+   → Edge Function verifica: proposals.shipping ?? organizations.default_shipping
+   → Envia para template como {frete}
 ```
 
-## Por que isso resolve definitivamente?
+### Desconto
 
-1. **Código padronizado**: Todo o frontend usará as views seguras
-2. **Alertas documentados**: Cada alerta terá justificativa técnica de porque é aceitável
-3. **Arquitetura validada**: O modelo security_invoker + RLS é o padrão recomendado pelo Supabase
+```text
+1. Vendedor adiciona item
+   → discount_type = 'percentage' (padrão)
 
-## Resultado Esperado
+2. Vendedor pode alternar para R$
+   → discount_type = 'fixed'
 
-- Alertas de segurança: 0 novos (existentes marcados com justificativa)
-- Funcionalidades: 100% mantidas
-- Emails: Ocultos para vendedores, visíveis apenas para admins e o próprio usuário
+3. Cálculo do subtotal ajusta automaticamente
+   → percentage: qty * price * (1 - discount/100)
+   → fixed: (qty * price) - discount
+```
+
+---
+
+## Detalhes Técnicos
+
+### Migração do Banco
+
+```sql
+-- Tipo de desconto nos itens
+ALTER TABLE proposal_items 
+ADD COLUMN discount_type TEXT NOT NULL DEFAULT 'percentage' 
+CHECK (discount_type IN ('percentage', 'fixed'));
+
+-- Frete padrão na organização
+ALTER TABLE organizations 
+ADD COLUMN default_shipping TEXT DEFAULT 'A combinar';
+
+-- Frete personalizado na proposta
+ALTER TABLE proposals 
+ADD COLUMN shipping TEXT;
+```
+
+### Interface ProposalItemFormData Atualizada
+
+```typescript
+interface ProposalItemFormData {
+  item_id: string;
+  item_name: string;
+  item_price: number;
+  quantity: number;
+  discount: number;
+  discount_type: 'percentage' | 'fixed';  // NOVO
+  subtotal: number;
+  max_discount?: number;
+}
+```
+
+### Lógica de Cálculo do Subtotal
+
+```typescript
+const calculateSubtotal = (
+  quantity: number, 
+  price: number, 
+  discount: number, 
+  discountType: 'percentage' | 'fixed'
+) => {
+  const baseValue = quantity * price;
+  if (discountType === 'percentage') {
+    return baseValue * (1 - discount / 100);
+  }
+  // fixed
+  return Math.max(0, baseValue - discount);
+};
+```
+
+### Edge Function - Novos Campos
+
+```typescript
+const templateData = {
+  // ... campos existentes ...
+  frete: proposal.shipping ?? organization?.default_shipping ?? 'A combinar',
+};
+```
+
+---
+
+## Resumo das Entregas
+
+| # | Entrega | Complexidade |
+|---|---------|--------------|
+| 1 | Migração SQL para novas colunas | Baixa |
+| 2 | Hook useProposals atualizado | Média |
+| 3 | UI de desconto com toggle %/R$ | Média |
+| 4 | UI de frete na proposta | Baixa |
+| 5 | Configurações de frete padrão (admin) | Baixa |
+| 6 | Edge Function com campo {frete} | Baixa |
+| 7 | Atualizar documentação de campos do template | Baixa |
