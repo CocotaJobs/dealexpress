@@ -162,18 +162,21 @@ export type Database = {
       organizations: {
         Row: {
           created_at: string
+          default_shipping: string | null
           id: string
           name: string
           updated_at: string
         }
         Insert: {
           created_at?: string
+          default_shipping?: string | null
           id?: string
           name: string
           updated_at?: string
         }
         Update: {
           created_at?: string
+          default_shipping?: string | null
           id?: string
           name?: string
           updated_at?: string
@@ -231,6 +234,7 @@ export type Database = {
         Row: {
           created_at: string
           discount: number
+          discount_type: string
           id: string
           item_id: string | null
           item_name: string
@@ -242,6 +246,7 @@ export type Database = {
         Insert: {
           created_at?: string
           discount?: number
+          discount_type?: string
           id?: string
           item_id?: string | null
           item_name: string
@@ -253,6 +258,7 @@ export type Database = {
         Update: {
           created_at?: string
           discount?: number
+          discount_type?: string
           id?: string
           item_id?: string | null
           item_name?: string
@@ -295,6 +301,7 @@ export type Database = {
           pdf_url: string | null
           proposal_number: string
           sent_at: string | null
+          shipping: string | null
           status: Database["public"]["Enums"]["proposal_status"]
           updated_at: string
           validity_days: number
@@ -315,6 +322,7 @@ export type Database = {
           pdf_url?: string | null
           proposal_number: string
           sent_at?: string | null
+          shipping?: string | null
           status?: Database["public"]["Enums"]["proposal_status"]
           updated_at?: string
           validity_days?: number
@@ -335,6 +343,7 @@ export type Database = {
           pdf_url?: string | null
           proposal_number?: string
           sent_at?: string | null
+          shipping?: string | null
           status?: Database["public"]["Enums"]["proposal_status"]
           updated_at?: string
           validity_days?: number
