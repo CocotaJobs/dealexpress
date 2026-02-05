@@ -783,6 +783,18 @@ Deno.serve(async (req) => {
 
     console.log(`Generating PDF for proposal: ${proposalId}, user: ${userId}`);
 
+    // Get user's organization_id for authorization check
+    const { data: userOrgId, error: orgError } = await supabaseUser
+      .rpc('get_user_organization_id');
+
+    if (orgError || !userOrgId) {
+      console.error('Failed to get user organization:', orgError);
+      return new Response(
+        JSON.stringify({ error: 'Não autorizado' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Fetch proposal data
     const { data: proposal, error: proposalError } = await supabaseAdmin
       .from('proposals')
@@ -795,6 +807,15 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({ error: 'Proposta não encontrada' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // AUTHORIZATION CHECK: Verify user belongs to the proposal's organization
+    if (proposal.organization_id !== userOrgId) {
+      console.error(`Authorization failed: user org ${userOrgId} != proposal org ${proposal.organization_id}`);
+      return new Response(
+        JSON.stringify({ error: 'Não autorizado' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
