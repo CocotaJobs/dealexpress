@@ -48,6 +48,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
 import { DiscountTypeToggle } from '@/components/proposals/DiscountTypeToggle';
 import { ShippingField } from '@/components/proposals/ShippingField';
+import { DocumentTypeField, DocumentType } from '@/components/proposals/DocumentTypeField';
 
 export default function EditProposal() {
   const { id } = useParams<{ id: string }>();
@@ -72,7 +73,8 @@ export default function EditProposal() {
   const [clientEmail, setClientEmail] = useState('');
   const [clientWhatsApp, setClientWhatsApp] = useState('');
   const [clientCompany, setClientCompany] = useState('');
-  const [clientCnpj, setClientCnpj] = useState('');
+  const [clientDocument, setClientDocument] = useState('');
+  const [documentType, setDocumentType] = useState<DocumentType>('cnpj');
   const [clientAddress, setClientAddress] = useState('');
 
   // Proposal items
@@ -120,8 +122,14 @@ export default function EditProposal() {
       setClientName(proposal.client_name);
       setClientEmail(proposal.client_email || '');
       setClientWhatsApp(proposal.client_whatsapp || '');
-      setClientCompany(proposal.client_company || '');
-      setClientCnpj(proposal.client_cnpj || '');
+      // Detect document type based on format (CPF has 11 digits, CNPJ has 14)
+      const rawDoc = (proposal.client_cnpj || '').replace(/\D/g, '');
+      if (rawDoc.length === 11) {
+        setDocumentType('cpf');
+      } else {
+        setDocumentType('cnpj');
+      }
+      setClientDocument(proposal.client_cnpj || '');
       setClientAddress(proposal.client_address || '');
       setPaymentConditions(proposal.payment_conditions || '');
       setValidityDays(proposal.validity_days);
@@ -267,14 +275,6 @@ export default function EditProposal() {
     return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
   };
 
-  const formatCnpj = (value: string) => {
-    const numbers = value.replace(/\D/g, '').slice(0, 14);
-    if (numbers.length <= 2) return numbers;
-    if (numbers.length <= 5) return `${numbers.slice(0, 2)}.${numbers.slice(2)}`;
-    if (numbers.length <= 8) return `${numbers.slice(0, 2)}.${numbers.slice(2, 5)}.${numbers.slice(5)}`;
-    if (numbers.length <= 12) return `${numbers.slice(0, 2)}.${numbers.slice(2, 5)}.${numbers.slice(5, 8)}/${numbers.slice(8)}`;
-    return `${numbers.slice(0, 2)}.${numbers.slice(2, 5)}.${numbers.slice(5, 8)}/${numbers.slice(8, 12)}-${numbers.slice(12)}`;
-  };
 
   const validateForm = () => {
     if (!clientName.trim()) {
@@ -299,7 +299,7 @@ export default function EditProposal() {
         client_email: clientEmail.trim() || null,
         client_whatsapp: clientWhatsApp.trim() || null,
         client_company: clientCompany.trim() || null,
-        client_cnpj: clientCnpj.trim() || null,
+        client_cnpj: clientDocument.trim() || null,
         client_address: clientAddress.trim() || null,
         payment_conditions: paymentConditions.trim() || null,
         validity_days: validityDays,
@@ -350,7 +350,7 @@ export default function EditProposal() {
         client_email: clientEmail.trim() || null,
         client_whatsapp: clientWhatsApp.trim() || null,
         client_company: clientCompany.trim() || null,
-        client_cnpj: clientCnpj.trim() || null,
+        client_cnpj: clientDocument.trim() || null,
         client_address: clientAddress.trim() || null,
         payment_conditions: paymentConditions.trim() || null,
         validity_days: validityDays,
@@ -411,7 +411,7 @@ export default function EditProposal() {
         client_email: clientEmail.trim() || null,
         client_whatsapp: clientWhatsApp.trim() || null,
         client_company: clientCompany.trim() || null,
-        client_cnpj: clientCnpj.trim() || null,
+        client_cnpj: clientDocument.trim() || null,
         client_address: clientAddress.trim() || null,
         payment_conditions: paymentConditions.trim() || null,
         validity_days: validityDays,
@@ -563,19 +563,12 @@ export default function EditProposal() {
                 </div>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="clientCnpj">CNPJ</Label>
-                  <div className="relative">
-                    <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      id="clientCnpj"
-                      value={clientCnpj}
-                      onChange={(e) => setClientCnpj(formatCnpj(e.target.value))}
-                      placeholder="00.000.000/0000-00"
-                      className="pl-9"
-                    />
-                  </div>
-                </div>
+                <DocumentTypeField
+                  value={clientDocument}
+                  onChange={setClientDocument}
+                  documentType={documentType}
+                  onDocumentTypeChange={setDocumentType}
+                />
                 <div className="space-y-2">
                   <Label htmlFor="clientAddress">Endereço</Label>
                   <div className="relative">
