@@ -70,6 +70,7 @@ export default function NewProposal() {
   // PDF Preview Dialog state
   const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false);
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [previewRemoteUrl, setPreviewRemoteUrl] = useState<string | null>(null);
   const [previewFileName, setPreviewFileName] = useState('');
 
   // Client data
@@ -255,6 +256,7 @@ export default function NewProposal() {
     if (!open && previewBlobUrl) {
       URL.revokeObjectURL(previewBlobUrl);
       setPreviewBlobUrl(null);
+      setPreviewRemoteUrl(null);
       setPreviewFileName('');
     }
     setIsPreviewDialogOpen(open);
@@ -311,10 +313,12 @@ export default function NewProposal() {
 
     if (blobResult) {
       setPreviewBlobUrl(blobResult.blobUrl);
+      setPreviewRemoteUrl(blobResult.remoteUrl);
       setPreviewFileName(blobResult.fileName);
     } else {
       // Keep dialog open to show error state
       setPreviewBlobUrl(null);
+      setPreviewRemoteUrl(null);
     }
 
     setIsPreviewing(false);
@@ -813,6 +817,7 @@ export default function NewProposal() {
         open={isPreviewDialogOpen}
         onOpenChange={handlePreviewDialogClose}
         blobUrl={previewBlobUrl}
+        remoteUrl={previewRemoteUrl}
         fileName={previewFileName}
         isLoading={isPreviewing}
         onDownload={handleDownloadFromPreview}
