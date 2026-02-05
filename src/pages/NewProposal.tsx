@@ -339,58 +339,67 @@ export default function NewProposal() {
 
     setIsSending(true);
 
-    // First create the proposal
-    const result = await createProposal(
-      {
-        client_name: clientName.trim(),
-        client_email: clientEmail.trim() || null,
-        client_whatsapp: clientWhatsApp.trim() || null,
-        client_company: clientCompany.trim() || null,
-        client_cnpj: clientCnpj.trim() || null,
-        client_address: clientAddress.trim() || null,
-        payment_conditions: paymentConditions.trim() || null,
-        validity_days: validityDays,
-        status: 'draft',
-        shipping: shipping,
-      },
-      proposalItems
-    );
+    let proposalId = createdProposalId;
 
-    if (result.data) {
-      // Generate PDF first
-      const pdfResult = await generatePdf(result.data.id);
+    // Only create a new proposal if one wasn't already created (e.g., via preview)
+    if (!proposalId) {
+      const result = await createProposal(
+        {
+          client_name: clientName.trim(),
+          client_email: clientEmail.trim() || null,
+          client_whatsapp: clientWhatsApp.trim() || null,
+          client_company: clientCompany.trim() || null,
+          client_cnpj: clientCnpj.trim() || null,
+          client_address: clientAddress.trim() || null,
+          payment_conditions: paymentConditions.trim() || null,
+          validity_days: validityDays,
+          status: 'draft',
+          shipping: shipping,
+        },
+        proposalItems
+      );
+
+      if (!result.data) {
+        setIsSending(false);
+        return;
+      }
+      proposalId = result.data.id;
+      setCreatedProposalId(proposalId);
+    }
+
+    // Generate PDF first
+    const pdfResult = await generatePdf(proposalId);
+    
+    if (pdfResult?.pdfUrl) {
+      // Send via WhatsApp
+      const { data: { session } } = await supabase.auth.getSession();
       
-      if (pdfResult?.pdfUrl) {
-        // Send via WhatsApp
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session?.access_token) {
-          const whatsappResponse = await supabase.functions.invoke('whatsapp', {
-            body: {
-              action: 'send-message',
-              phone: clientWhatsApp.replace(/\D/g, ''),
-              message: `Olá ${clientName}! Segue a proposta comercial solicitada.`,
-              mediaUrl: pdfResult.pdfUrl,
-              mediaType: 'document',
-              fileName: pdfResult.fileName,
-            },
-          });
+      if (session?.access_token) {
+        const whatsappResponse = await supabase.functions.invoke('whatsapp', {
+          body: {
+            action: 'send-message',
+            phone: clientWhatsApp.replace(/\D/g, ''),
+            message: `Olá ${clientName}! Segue a proposta comercial solicitada.`,
+            mediaUrl: pdfResult.pdfUrl,
+            mediaType: 'document',
+            fileName: pdfResult.fileName,
+          },
+        });
 
-          if (whatsappResponse.error) {
-            console.error('Error sending WhatsApp:', whatsappResponse.error);
-            toast({
-              title: 'PDF gerado, mas houve erro no envio',
-              description: 'O PDF foi gerado. Tente enviar manualmente.',
-              variant: 'destructive',
-            });
-          } else {
-            // Mark as sent
-            await sendProposal(result.data.id);
-            toast({
-              title: 'Proposta enviada!',
-              description: `A proposta foi enviada para ${clientWhatsApp} via WhatsApp.`,
-            });
-          }
+        if (whatsappResponse.error) {
+          console.error('Error sending WhatsApp:', whatsappResponse.error);
+          toast({
+            title: 'PDF gerado, mas houve erro no envio',
+            description: 'O PDF foi gerado. Tente enviar manualmente.',
+            variant: 'destructive',
+          });
+        } else {
+          // Mark as sent
+          await sendProposal(proposalId);
+          toast({
+            title: 'Proposta enviada!',
+            description: `A proposta foi enviada para ${clientWhatsApp} via WhatsApp.`,
+          });
         }
       }
     }
