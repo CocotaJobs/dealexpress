@@ -1,45 +1,56 @@
 
-# Plano: Correção do Erro "Erro ao Gerar Proposta"
+# Plano: Correção da Check Constraint de Desconto
 
 ## Problema Identificado
 
-O erro está sendo causado por **overflow numérico** no campo `discount` da tabela `proposal_items`. Este campo tem precisão `numeric(5,2)`, que aceita valores até 999.99. Quando o usuário aplica um desconto em valor fixo (R$) maior que R$ 999,99, o banco de dados rejeita a inserção.
+O erro está sendo causado por uma **check constraint** (`proposal_items_discount_check`) que limita o campo `discount` a valores entre 0 e 100. Esta constraint foi criada quando apenas descontos percentuais eram suportados.
 
 **Logs do erro:**
-- `numeric field overflow` - Confirmado nos logs do PostgreSQL
-- O erro ocorre ao tentar criar proposta com itens que tenham desconto fixo acima do limite
+```
+new row for relation "proposal_items" violates check constraint "proposal_items_discount_check"
+```
+
+**Constraint atual:**
+```sql
+CHECK ((discount >= 0) AND (discount <= 100))
+```
 
 ## Solução Proposta
 
-### 1. Migração de Banco de Dados
+Substituir a constraint para validar corretamente com base no tipo de desconto:
+- **Desconto percentual (%)**: Manter limite 0-100
+- **Desconto fixo (R$)**: Apenas validar que seja >= 0 (sem limite superior)
 
-Alterar a precisão do campo `discount` na tabela `proposal_items` de `numeric(5,2)` para `numeric(12,2)`:
+### Migração SQL
 
 ```sql
+-- Remover a constraint antiga
 ALTER TABLE public.proposal_items 
-ALTER COLUMN discount TYPE numeric(12,2);
+DROP CONSTRAINT proposal_items_discount_check;
+
+-- Adicionar nova constraint que considera o tipo de desconto
+ALTER TABLE public.proposal_items 
+ADD CONSTRAINT proposal_items_discount_check 
+CHECK (
+  (discount >= 0) AND 
+  (discount_type = 'percentage' AND discount <= 100 OR discount_type = 'fixed')
+);
 ```
-
-Isso permitirá descontos em valor fixo de até R$ 9.999.999.999,99, que é mais que suficiente para qualquer caso de uso.
-
-### 2. Verificação de Segurança
-
-Após a migração, será executado um security scan para garantir que nenhuma funcionalidade foi comprometida.
 
 ## Resumo das Mudanças
 
-| Arquivo/Componente | Alteração |
-|-------------------|-----------|
-| Tabela `proposal_items` | Campo `discount`: `numeric(5,2)` para `numeric(12,2)` |
+| Componente | Alteração |
+|------------|-----------|
+| Constraint `proposal_items_discount_check` | Atualizada para permitir descontos fixos > 100 |
 
 ## Impacto
 
 - **Funcionalidades existentes**: Nenhum impacto negativo
-- **Dados existentes**: Preservados (apenas aumenta a capacidade)
-- **Performance**: Nenhum impacto significativo
+- **Dados existentes**: Preservados
+- **Segurança**: Mantida (validação de percentual 0-100 continua ativa)
 
 ## Passos de Implementação
 
-1. Aplicar migração SQL para alterar precisão do campo
-2. Executar security scan
-3. Testar criação de proposta com desconto fixo alto
+1. Aplicar migração SQL para atualizar a constraint
+2. Testar criação de proposta com desconto fixo e percentual
+3. Executar security scan para garantir integridade
