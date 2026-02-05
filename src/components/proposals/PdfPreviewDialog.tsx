@@ -6,12 +6,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Loader2, Download, ExternalLink, X } from 'lucide-react';
+import { Loader2, Download, ExternalLink } from 'lucide-react';
+import { PdfCanvasViewer } from '@/components/proposals/PdfCanvasViewer';
 
 interface PdfPreviewDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   blobUrl: string | null;
+  remoteUrl?: string | null;
   fileName: string;
   isLoading?: boolean;
   onDownload?: () => void;
@@ -21,6 +23,7 @@ export function PdfPreviewDialog({
   open,
   onOpenChange,
   blobUrl,
+  remoteUrl = null,
   fileName,
   isLoading = false,
   onDownload,
@@ -46,8 +49,9 @@ export function PdfPreviewDialog({
   }, [blobUrl]);
 
   const handleOpenInNewTab = () => {
-    if (blobUrl) {
-      window.open(blobUrl, '_blank');
+    const target = remoteUrl ?? blobUrl;
+    if (target) {
+      window.open(target, '_blank', 'noopener,noreferrer');
     }
   };
 
@@ -95,19 +99,9 @@ export function PdfPreviewDialog({
               </div>
             </div>
           ) : blobUrl ? (
-            <object
-              data={blobUrl}
-              type="application/pdf"
-              className="w-full h-full"
-              aria-label="PDF Preview"
-            >
-              {/* Fallback for browsers that don't support object for PDF */}
-              <iframe
-                src={blobUrl}
-                className="w-full h-full border-0"
-                title="PDF Preview"
-              />
-            </object>
+            <div className="w-full h-full">
+              <PdfCanvasViewer url={blobUrl} className="w-full h-full" />
+            </div>
           ) : (
             <div className="flex items-center justify-center h-full">
               <div className="text-center space-y-4">

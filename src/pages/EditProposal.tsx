@@ -72,6 +72,7 @@ export default function EditProposal() {
   // PDF Preview Dialog state
   const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false);
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [previewRemoteUrl, setPreviewRemoteUrl] = useState<string | null>(null);
   const [previewFileName, setPreviewFileName] = useState('');
 
   // Client data
@@ -327,6 +328,7 @@ export default function EditProposal() {
     if (!open && previewBlobUrl) {
       URL.revokeObjectURL(previewBlobUrl);
       setPreviewBlobUrl(null);
+      setPreviewRemoteUrl(null);
       setPreviewFileName('');
     }
     setIsPreviewDialogOpen(open);
@@ -369,13 +371,15 @@ export default function EditProposal() {
       // Generate PDF and get blob URL
       const blobResult = await generatePdfBlobUrl(id);
 
-      if (blobResult) {
-        setPreviewBlobUrl(blobResult.blobUrl);
-        setPreviewFileName(blobResult.fileName);
-      } else {
-        // Keep dialog open to show error state
-        setPreviewBlobUrl(null);
-      }
+       if (blobResult) {
+         setPreviewBlobUrl(blobResult.blobUrl);
+         setPreviewRemoteUrl(blobResult.remoteUrl);
+         setPreviewFileName(blobResult.fileName);
+       } else {
+         // Keep dialog open to show error state
+         setPreviewBlobUrl(null);
+         setPreviewRemoteUrl(null);
+       }
     } else {
       setIsPreviewDialogOpen(false);
     }
@@ -900,6 +904,7 @@ export default function EditProposal() {
         open={isPreviewDialogOpen}
         onOpenChange={handlePreviewDialogClose}
         blobUrl={previewBlobUrl}
+        remoteUrl={previewRemoteUrl}
         fileName={previewFileName}
         isLoading={isPreviewing}
         onDownload={handleDownloadFromPreview}

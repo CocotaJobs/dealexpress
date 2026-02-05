@@ -62,6 +62,7 @@ export default function ViewProposal() {
   // PDF Preview Dialog state
   const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false);
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [previewRemoteUrl, setPreviewRemoteUrl] = useState<string | null>(null);
   const [previewFileName, setPreviewFileName] = useState('');
   const [isPreviewing, setIsPreviewing] = useState(false);
 
@@ -134,6 +135,7 @@ export default function ViewProposal() {
     if (!open && previewBlobUrl) {
       URL.revokeObjectURL(previewBlobUrl);
       setPreviewBlobUrl(null);
+      setPreviewRemoteUrl(null);
       setPreviewFileName('');
     }
     setIsPreviewDialogOpen(open);
@@ -151,9 +153,11 @@ export default function ViewProposal() {
 
     if (blobResult) {
       setPreviewBlobUrl(blobResult.blobUrl);
+      setPreviewRemoteUrl(blobResult.remoteUrl);
       setPreviewFileName(blobResult.fileName);
     } else {
       setPreviewBlobUrl(null);
+      setPreviewRemoteUrl(null);
     }
 
     setIsPreviewing(false);
@@ -525,6 +529,7 @@ export default function ViewProposal() {
         open={isPreviewDialogOpen}
         onOpenChange={handlePreviewDialogClose}
         blobUrl={previewBlobUrl}
+        remoteUrl={previewRemoteUrl}
         fileName={previewFileName}
         isLoading={isPreviewing}
         onDownload={handleDownloadFromPreview}

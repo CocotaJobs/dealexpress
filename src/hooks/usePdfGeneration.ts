@@ -187,7 +187,7 @@ export function usePdfGeneration() {
    */
   const generatePdfBlobUrl = async (
     proposalId: string
-  ): Promise<{ blobUrl: string; fileName: string } | null> => {
+  ): Promise<{ blobUrl: string; fileName: string; remoteUrl: string } | null> => {
     const result = await generatePdf(proposalId);
 
     if (!result?.pdfUrl) {
@@ -200,7 +200,7 @@ export function usePdfGeneration() {
       });
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
-      return { blobUrl, fileName: result.fileName };
+      return { blobUrl, fileName: result.fileName, remoteUrl: result.pdfUrl };
     } catch (error) {
       console.error('Error fetching PDF for blob URL:', error);
       toast({
