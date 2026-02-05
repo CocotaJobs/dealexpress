@@ -32,6 +32,7 @@ import { useProposals, ProposalWithItems } from '@/hooks/useProposals';
 import { usePdfGeneration } from '@/hooks/usePdfGeneration';
 import { useAuth } from '@/contexts/AuthContext';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PdfPreviewDialog } from '@/components/proposals/PdfPreviewDialog';
 
 const statusLabels: Record<string, string> = {
   draft: 'Rascunho',
@@ -51,12 +52,18 @@ export default function ViewProposal() {
   const { toast } = useToast();
   const { profile } = useAuth();
   const { sendProposal, duplicateProposal } = useProposals();
-  const { isGenerating, previewPdf, downloadPdf, generatePdf, openPdfPreviewWindow } = usePdfGeneration();
+  const { isGenerating, downloadPdf, generatePdf, generatePdfBlobUrl } = usePdfGeneration();
 
   const [proposal, setProposal] = useState<ProposalWithItems | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
+
+  // PDF Preview Dialog state
+  const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [previewFileName, setPreviewFileName] = useState('');
+  const [isPreviewing, setIsPreviewing] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -123,11 +130,39 @@ export default function ViewProposal() {
     }).format(new Date(dateString));
   };
 
-  const handlePreviewPdf = () => {
+  const handlePreviewDialogClose = (open: boolean) => {
+    if (!open && previewBlobUrl) {
+      URL.revokeObjectURL(previewBlobUrl);
+      setPreviewBlobUrl(null);
+      setPreviewFileName('');
+    }
+    setIsPreviewDialogOpen(open);
+  };
+
+  const handlePreviewPdf = async () => {
     if (!proposal) return;
-    // Open window IMMEDIATELY on click (before any async operation)
-    const previewWindow = openPdfPreviewWindow();
-    previewPdf(proposal.id, previewWindow);
+
+    // Open dialog immediately with loading state
+    setIsPreviewDialogOpen(true);
+    setIsPreviewing(true);
+
+    // Generate PDF and get blob URL
+    const blobResult = await generatePdfBlobUrl(proposal.id);
+
+    if (blobResult) {
+      setPreviewBlobUrl(blobResult.blobUrl);
+      setPreviewFileName(blobResult.fileName);
+    } else {
+      setPreviewBlobUrl(null);
+    }
+
+    setIsPreviewing(false);
+  };
+
+  const handleDownloadFromPreview = () => {
+    if (proposal) {
+      downloadPdf(proposal.id);
+    }
   };
 
   const handleDownloadPdf = () => {
@@ -484,6 +519,16 @@ export default function ViewProposal() {
           </Card>
         </div>
       </div>
+
+      {/* PDF Preview Dialog */}
+      <PdfPreviewDialog
+        open={isPreviewDialogOpen}
+        onOpenChange={handlePreviewDialogClose}
+        blobUrl={previewBlobUrl}
+        fileName={previewFileName}
+        isLoading={isPreviewing}
+        onDownload={handleDownloadFromPreview}
+      />
     </div>
   );
 }

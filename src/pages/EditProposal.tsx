@@ -44,6 +44,7 @@ import { useProposals, ProposalItemFormData, DiscountType, calculateSubtotal } f
 import { useOrganizationSettings } from '@/hooks/useOrganizationSettings';
 import { usePdfGeneration } from '@/hooks/usePdfGeneration';
 import { useAuth } from '@/contexts/AuthContext';
+import { PdfPreviewDialog } from '@/components/proposals/PdfPreviewDialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
 import { DiscountTypeToggle } from '@/components/proposals/DiscountTypeToggle';
@@ -58,7 +59,7 @@ export default function EditProposal() {
   const { items, isLoading: itemsLoading } = useItems();
   const { updateProposal, sendProposal } = useProposals();
   const { defaultShipping } = useOrganizationSettings();
-  const { isGenerating, generatePdf, previewPdf, openPdfPreviewWindow } = usePdfGeneration();
+  const { isGenerating, generatePdf, downloadPdf, generatePdfBlobUrl } = usePdfGeneration();
 
   const [isItemDialogOpen, setIsItemDialogOpen] = useState(false);
   const [itemSearch, setItemSearch] = useState('');
@@ -67,6 +68,11 @@ export default function EditProposal() {
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [proposalNumber, setProposalNumber] = useState('');
+
+  // PDF Preview Dialog state
+  const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [previewFileName, setPreviewFileName] = useState('');
 
   // Client data
   const [clientName, setClientName] = useState('');
@@ -317,6 +323,15 @@ export default function EditProposal() {
     }
   };
 
+  const handlePreviewDialogClose = (open: boolean) => {
+    if (!open && previewBlobUrl) {
+      URL.revokeObjectURL(previewBlobUrl);
+      setPreviewBlobUrl(null);
+      setPreviewFileName('');
+    }
+    setIsPreviewDialogOpen(open);
+  };
+
   const handlePreview = async () => {
     if (!validateForm() || !id) return;
 
@@ -329,20 +344,11 @@ export default function EditProposal() {
       return;
     }
 
-    // IMPORTANT: Open window BEFORE any await to avoid Chrome popup blocking
-    const previewWindow = openPdfPreviewWindow();
-    if (!previewWindow) {
-      toast({
-        title: 'Popup bloqueado',
-        description: 'Permita popups para este site ou use "Baixar PDF".',
-        variant: 'destructive',
-      });
-      return;
-    }
-
+    // Open dialog immediately with loading state
+    setIsPreviewDialogOpen(true);
     setIsPreviewing(true);
 
-    // Now save the proposal
+    // Save the proposal first
     const result = await updateProposal(
       id,
       {
@@ -360,14 +366,27 @@ export default function EditProposal() {
     );
 
     if (result.data) {
-      // Generate and preview PDF using the pre-opened window
-      await previewPdf(id, previewWindow);
+      // Generate PDF and get blob URL
+      const blobResult = await generatePdfBlobUrl(id);
+
+      if (blobResult) {
+        setPreviewBlobUrl(blobResult.blobUrl);
+        setPreviewFileName(blobResult.fileName);
+      } else {
+        // Keep dialog open to show error state
+        setPreviewBlobUrl(null);
+      }
     } else {
-      // Close the window if save failed
-      previewWindow.close();
+      setIsPreviewDialogOpen(false);
     }
 
     setIsPreviewing(false);
+  };
+
+  const handleDownloadFromPreview = () => {
+    if (id) {
+      downloadPdf(id);
+    }
   };
 
   const handleSendProposal = async () => {
@@ -875,6 +894,16 @@ export default function EditProposal() {
           </Card>
         </div>
       </div>
+
+      {/* PDF Preview Dialog */}
+      <PdfPreviewDialog
+        open={isPreviewDialogOpen}
+        onOpenChange={handlePreviewDialogClose}
+        blobUrl={previewBlobUrl}
+        fileName={previewFileName}
+        isLoading={isPreviewing}
+        onDownload={handleDownloadFromPreview}
+      />
     </div>
   );
 }
