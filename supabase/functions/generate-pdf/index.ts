@@ -239,6 +239,7 @@ async function processDocxTemplate(
     cliente_empresa: proposal.client_company || '',
     cliente_endereco: proposal.client_address || '',
     cliente_cnpj: proposal.client_cnpj || '',
+    cliente_cnpj_cpf: proposal.client_cnpj || '',
     data: formatDate(proposal.created_at),
     data_extenso: formatDateExtended(),
     numero_proposta: proposal.proposal_number || '',
