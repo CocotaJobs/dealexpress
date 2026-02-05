@@ -44,6 +44,7 @@ import { useProposals, ProposalItemFormData, DiscountType, calculateSubtotal } f
 import { useOrganizationSettings } from '@/hooks/useOrganizationSettings';
 import { usePdfGeneration } from '@/hooks/usePdfGeneration';
 import { useAuth } from '@/contexts/AuthContext';
+import { PdfPreviewDialog } from '@/components/proposals/PdfPreviewDialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
 import { DiscountTypeToggle } from '@/components/proposals/DiscountTypeToggle';
@@ -57,7 +58,7 @@ export default function NewProposal() {
   const { items, isLoading: itemsLoading } = useItems();
   const { createProposal, sendProposal } = useProposals();
   const { defaultShipping } = useOrganizationSettings();
-  const { isGenerating, generatePdf, previewPdf, openPdfPreviewWindow } = usePdfGeneration();
+  const { isGenerating, generatePdf, downloadPdf, generatePdfBlobUrl } = usePdfGeneration();
 
   const [isItemDialogOpen, setIsItemDialogOpen] = useState(false);
   const [itemSearch, setItemSearch] = useState('');
@@ -65,6 +66,11 @@ export default function NewProposal() {
   const [isSending, setIsSending] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [createdProposalId, setCreatedProposalId] = useState<string | null>(null);
+
+  // PDF Preview Dialog state
+  const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [previewFileName, setPreviewFileName] = useState('');
 
   // Client data
   const [clientName, setClientName] = useState('');
@@ -245,6 +251,15 @@ export default function NewProposal() {
     }
   };
 
+  const handlePreviewDialogClose = (open: boolean) => {
+    if (!open && previewBlobUrl) {
+      URL.revokeObjectURL(previewBlobUrl);
+      setPreviewBlobUrl(null);
+      setPreviewFileName('');
+    }
+    setIsPreviewDialogOpen(open);
+  };
+
   const handlePreview = async () => {
     if (!validateForm()) return;
 
@@ -257,47 +272,58 @@ export default function NewProposal() {
       return;
     }
 
-    // IMPORTANT: Open window BEFORE any await to avoid Chrome popup blocking
-    const previewWindow = openPdfPreviewWindow();
-    if (!previewWindow) {
-      toast({
-        title: 'Popup bloqueado',
-        description: 'Permita popups para este site ou use "Baixar PDF".',
-        variant: 'destructive',
-      });
-      return;
-    }
-
+    // Open dialog immediately with loading state
+    setIsPreviewDialogOpen(true);
     setIsPreviewing(true);
 
-    // Now save the proposal
-    const result = await createProposal(
-      {
-        client_name: clientName.trim(),
-        client_email: clientEmail.trim() || null,
-        client_whatsapp: clientWhatsApp.trim() || null,
-        client_company: clientCompany.trim() || null,
-        client_cnpj: clientDocument.trim() || null,
-        client_address: clientAddress.trim() || null,
-        payment_conditions: paymentConditions.trim() || null,
-        validity_days: validityDays,
-        status: 'draft',
-        shipping: shipping,
-      },
-      proposalItems
-    );
+    let proposalId = createdProposalId;
 
-    if (result.data) {
-      // Mark as created to prevent duplicates
-      setCreatedProposalId(result.data.id);
-      // Generate and preview PDF using the pre-opened window
-      await previewPdf(result.data.id, previewWindow);
+    // Only create a new proposal if one wasn't already created
+    if (!proposalId) {
+      const result = await createProposal(
+        {
+          client_name: clientName.trim(),
+          client_email: clientEmail.trim() || null,
+          client_whatsapp: clientWhatsApp.trim() || null,
+          client_company: clientCompany.trim() || null,
+          client_cnpj: clientDocument.trim() || null,
+          client_address: clientAddress.trim() || null,
+          payment_conditions: paymentConditions.trim() || null,
+          validity_days: validityDays,
+          status: 'draft',
+          shipping: shipping,
+        },
+        proposalItems
+      );
+
+      if (!result.data) {
+        setIsPreviewing(false);
+        setIsPreviewDialogOpen(false);
+        return;
+      }
+
+      proposalId = result.data.id;
+      setCreatedProposalId(proposalId);
+    }
+
+    // Generate PDF and get blob URL
+    const blobResult = await generatePdfBlobUrl(proposalId);
+
+    if (blobResult) {
+      setPreviewBlobUrl(blobResult.blobUrl);
+      setPreviewFileName(blobResult.fileName);
     } else {
-      // Close the window if save failed
-      previewWindow.close();
+      // Keep dialog open to show error state
+      setPreviewBlobUrl(null);
     }
 
     setIsPreviewing(false);
+  };
+
+  const handleDownloadFromPreview = () => {
+    if (createdProposalId) {
+      downloadPdf(createdProposalId);
+    }
   };
 
   const handleSendProposal = async () => {
@@ -781,6 +807,16 @@ export default function NewProposal() {
           </Card>
         </div>
       </div>
+
+      {/* PDF Preview Dialog */}
+      <PdfPreviewDialog
+        open={isPreviewDialogOpen}
+        onOpenChange={handlePreviewDialogClose}
+        blobUrl={previewBlobUrl}
+        fileName={previewFileName}
+        isLoading={isPreviewing}
+        onDownload={handleDownloadFromPreview}
+      />
     </div>
   );
 }

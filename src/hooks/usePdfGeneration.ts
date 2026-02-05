@@ -180,11 +180,44 @@ export function usePdfGeneration() {
     return result;
   };
 
+  /**
+   * Generate PDF and return a Blob URL for in-app preview (no popup needed).
+   * @param proposalId - The proposal ID
+   * @returns Object with blobUrl and fileName, or null on failure
+   */
+  const generatePdfBlobUrl = async (
+    proposalId: string
+  ): Promise<{ blobUrl: string; fileName: string } | null> => {
+    const result = await generatePdf(proposalId);
+
+    if (!result?.pdfUrl) {
+      return null;
+    }
+
+    try {
+      const response = await fetch(withCacheBuster(result.pdfUrl), {
+        cache: 'no-store',
+      });
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      return { blobUrl, fileName: result.fileName };
+    } catch (error) {
+      console.error('Error fetching PDF for blob URL:', error);
+      toast({
+        title: 'Erro ao carregar PDF',
+        description: 'Não foi possível carregar o PDF para visualização.',
+        variant: 'destructive',
+      });
+      return null;
+    }
+  };
+
   return {
     isGenerating,
     generatePdf,
     previewPdf,
     downloadPdf,
     openPdfPreviewWindow,
+    generatePdfBlobUrl,
   };
 }
