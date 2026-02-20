@@ -255,74 +255,34 @@ async function handleCreate(
   const createData = await createResponse.json();
   console.log('Instance created full response:', JSON.stringify(createData));
 
-  // Extract QR code - Evolution API nests it as qrcode.base64 or qrcode.qrcode.base64
-  const qrcode =
+  // Extract QR code if already provided (sometimes comes directly in create response)
+  const immediateQrcode =
     createData.qrcode?.base64 ||
     createData.qrcode?.qrcode?.base64 ||
     createData.base64 ||
     null;
-  console.log(`QR code present: ${!!qrcode}`);
+  console.log(`Immediate QR code present: ${!!immediateQrcode}`);
 
-  // Step 3: If QR wasn't in create response (status "close"), fetch via /instance/connect/
-  // The Evolution API sometimes needs a separate connect call to generate the QR code.
-  // Retry up to 3 times with increasing delays to handle async QR generation.
-  let finalQrcode = qrcode;
-  if (!finalQrcode) {
-    console.log('QR not in create response — fetching via /instance/connect/ with retries');
-
-    const delays = [2000, 3000, 4000];
-    for (let attempt = 0; attempt < delays.length; attempt++) {
-      await new Promise(resolve => setTimeout(resolve, delays[attempt]));
-      console.log(`Connect attempt ${attempt + 1} of ${delays.length}`);
-
-      const qrResponse = await fetch(`${evolutionUrl}/instance/connect/${instanceName}`, {
-        method: 'GET',
-        headers: { 'apikey': evolutionKey, 'Content-Type': 'application/json' },
-      });
-
-      if (qrResponse.ok) {
-        const qrData = await qrResponse.json();
-        console.log('Connect response:', JSON.stringify(qrData));
-        finalQrcode =
-          qrData.base64 ||
-          qrData.qrcode?.base64 ||
-          qrData.code ||
-          null;
-
-        if (finalQrcode) {
-          console.log('QR code obtained on attempt', attempt + 1);
-          break;
-        }
-        console.log('QR not ready yet, retrying...');
-      } else {
-        const errText = await qrResponse.text();
-        console.error(`Connect attempt ${attempt + 1} failed:`, qrResponse.status, errText);
-      }
-    }
-  }
-
-  // Update profile with session ID
+  // Update profile with session ID and clear any stale QR code
   await supabaseAdmin
     .from('profiles')
     .update({
       whatsapp_session_id: instanceName,
       whatsapp_connected: false,
+      whatsapp_qr_code: immediateQrcode || null,
     })
     .eq('id', userId);
 
-  if (!finalQrcode) {
-    console.error('QR code could not be obtained after all attempts');
-    return new Response(
-      JSON.stringify({ error: 'QR Code não pôde ser gerado. Tente novamente em alguns segundos.' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-  }
+  // The QR code will arrive via QRCODE_UPDATED webhook and be saved to profiles.whatsapp_qr_code
+  // The frontend will poll the status endpoint which reads the QR from the DB
+  console.log('Instance created. QR code will arrive via webhook QRCODE_UPDATED.');
 
   return new Response(
     JSON.stringify({
       success: true,
       connected: false,
-      qrcode: finalQrcode,
+      qrcode: immediateQrcode,
+      waiting: !immediateQrcode,
       instanceName,
     }),
     { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -359,13 +319,23 @@ async function handleStatus(
 
   const isConnected = data.instance?.state === 'open';
 
-  // Atualizar banco de dados quando conectado
+  // Fetch QR code from DB (stored by QRCODE_UPDATED webhook)
+  const { data: profileData } = await supabaseAdmin
+    .from('profiles')
+    .select('whatsapp_qr_code')
+    .eq('id', userId)
+    .single();
+
+  const qrcode = profileData?.whatsapp_qr_code || null;
+
+  // Update DB when connected
   if (isConnected) {
     const { error } = await supabaseAdmin
       .from('profiles')
       .update({
         whatsapp_connected: true,
         whatsapp_session_id: instanceName,
+        whatsapp_qr_code: null, // Clear QR when connected
       })
       .eq('id', userId);
 
@@ -380,6 +350,7 @@ async function handleStatus(
     JSON.stringify({
       connected: isConnected,
       state: data.instance?.state || 'unknown',
+      qrcode: isConnected ? null : qrcode,
     }),
     { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
   );
@@ -455,18 +426,43 @@ async function handleWebhook(
 
   console.log(`Webhook for user: ${userId}, event: ${event}`);
 
+  if (event === 'QRCODE_UPDATED' || event === 'qrcode.updated') {
+    const qrBase64 = data?.qrcode?.base64 || data?.base64 || null;
+    console.log(`QR code received via webhook, size: ${qrBase64?.length ?? 0}`);
+
+    if (qrBase64) {
+      const { error } = await supabaseAdmin
+        .from('profiles')
+        .update({ whatsapp_qr_code: qrBase64 })
+        .eq('id', userId);
+
+      if (error) {
+        console.error('Error saving QR code:', error);
+      } else {
+        console.log('QR code saved to profile');
+      }
+    }
+  }
+
   if (event === 'connection.update' || event === 'CONNECTION_UPDATE') {
     const state = data?.state;
     const isConnected = state === 'open';
 
     console.log(`Connection update: state=${state}, connected=${isConnected}`);
 
+    const updateData: Record<string, unknown> = {
+      whatsapp_connected: isConnected,
+      whatsapp_session_id: isConnected ? instance : null,
+    };
+
+    // Clear QR code when connected or disconnected
+    if (isConnected) {
+      updateData.whatsapp_qr_code = null;
+    }
+
     const { error } = await supabaseAdmin
       .from('profiles')
-      .update({
-        whatsapp_connected: isConnected,
-        whatsapp_session_id: isConnected ? instance : null,
-      })
+      .update(updateData)
       .eq('id', userId);
 
     if (error) {

@@ -59,6 +59,15 @@ export function useWhatsAppConnection() {
         });
         return true;
       }
+
+      // Update QR code if it arrived via webhook
+      if (data.qrcode) {
+        setState(prev => ({
+          ...prev,
+          qrCodeBase64: data.qrcode,
+        }));
+      }
+
       return false;
     } catch (error) {
       console.error('Error checking status:', error);
@@ -114,6 +123,10 @@ export function useWhatsAppConnection() {
           ...prev,
           qrCodeBase64: data.qrcode,
         }));
+        startPolling();
+      } else if (data.waiting) {
+        // QR code will arrive via webhook — start polling to catch it from DB
+        console.log('Waiting for QR code via webhook...');
         startPolling();
       } else {
         throw new Error('QR Code não recebido');
