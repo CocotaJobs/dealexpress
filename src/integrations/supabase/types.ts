@@ -194,6 +194,7 @@ export type Database = {
           organization_id: string | null
           updated_at: string
           whatsapp_connected: boolean
+          whatsapp_qr_code: string | null
           whatsapp_session_id: string | null
         }
         Insert: {
@@ -206,6 +207,7 @@ export type Database = {
           organization_id?: string | null
           updated_at?: string
           whatsapp_connected?: boolean
+          whatsapp_qr_code?: string | null
           whatsapp_session_id?: string | null
         }
         Update: {
@@ -218,6 +220,7 @@ export type Database = {
           organization_id?: string | null
           updated_at?: string
           whatsapp_connected?: boolean
+          whatsapp_qr_code?: string | null
           whatsapp_session_id?: string | null
         }
         Relationships: [
