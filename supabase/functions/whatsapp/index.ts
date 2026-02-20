@@ -159,7 +159,7 @@ async function handleCreate(
 ) {
   console.log(`Creating instance: ${instanceName}`);
 
-  // First, check if instance already exists
+  // Step 1: Check if instance already exists and its state
   const statusResponse = await fetch(`${evolutionUrl}/instance/connectionState/${instanceName}`, {
     method: 'GET',
     headers: {
@@ -170,11 +170,11 @@ async function handleCreate(
 
   if (statusResponse.ok) {
     const statusData = await statusResponse.json();
-    console.log('Existing instance status:', statusData);
-    
-    // If already connected, return success
-    if (statusData.instance?.state === 'open') {
-      // Update database
+    const currentState = statusData.instance?.state;
+    console.log(`Existing instance found. State: ${currentState}`);
+
+    // If already connected ("open"), return success immediately
+    if (currentState === 'open') {
       await supabaseAdmin
         .from('profiles')
         .update({
@@ -193,34 +193,34 @@ async function handleCreate(
       );
     }
 
-    // If instance exists but not connected, get new QR code
-    const qrResponse = await fetch(`${evolutionUrl}/instance/connect/${instanceName}`, {
-      method: 'GET',
-      headers: {
-        'apikey': evolutionKey,
-        'Content-Type': 'application/json',
-      },
-    });
+    // Instance exists but is NOT connected (e.g. "connecting", "close", etc.)
+    // → Delete it so we can create a fresh one with a guaranteed QR code
+    console.log(`Instance state is "${currentState}" — deleting and recreating to get a fresh QR code`);
 
-    if (qrResponse.ok) {
-      const qrData = await qrResponse.json();
-      console.log('QR code generated for existing instance');
-      
-      return new Response(
-        JSON.stringify({
-          success: true,
-          connected: false,
-          qrcode: qrData.base64 || qrData.qrcode?.base64,
-          instanceName,
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    // Attempt logout first (best-effort, ignore errors)
+    await fetch(`${evolutionUrl}/instance/logout/${instanceName}`, {
+      method: 'DELETE',
+      headers: { 'apikey': evolutionKey, 'Content-Type': 'application/json' },
+    }).catch(() => console.log('Logout attempt failed (non-critical)'));
+
+    // Delete the stale instance
+    const deleteResponse = await fetch(`${evolutionUrl}/instance/delete/${instanceName}`, {
+      method: 'DELETE',
+      headers: { 'apikey': evolutionKey, 'Content-Type': 'application/json' },
+    });
+    console.log(`Delete response: ${deleteResponse.status}`);
+
+    // Wait 1 second before recreating to ensure Evolution API processes the deletion
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  } else {
+    console.log('No existing instance found — will create a new one');
   }
 
-  // Create new instance
+  // Step 2: Create a fresh instance (always reaches here when not "open")
   const webhookUrl = `${supabaseUrl}/functions/v1/whatsapp`;
   
+  console.log(`Creating new instance: ${instanceName} with webhook: ${webhookUrl}`);
+
   const createResponse = await fetch(`${evolutionUrl}/instance/create`, {
     method: 'POST',
     headers: {
@@ -245,7 +245,7 @@ async function handleCreate(
 
   if (!createResponse.ok) {
     const errorText = await createResponse.text();
-    console.error('Evolution API error:', createResponse.status, errorText);
+    console.error('Evolution API create error:', createResponse.status, errorText);
     return new Response(
       JSON.stringify({ error: 'Falha ao criar instância do WhatsApp' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -253,7 +253,32 @@ async function handleCreate(
   }
 
   const createData = await createResponse.json();
-  console.log('Instance created:', createData);
+  console.log('Instance created. Response keys:', Object.keys(createData));
+
+  // Extract QR code from response (Evolution API may nest it differently)
+  const qrcode = createData.qrcode?.base64 || createData.base64 || null;
+  console.log(`QR code present: ${!!qrcode}`);
+
+  // Step 3: If QR wasn't in create response, try fetching it explicitly
+  let finalQrcode = qrcode;
+  if (!finalQrcode) {
+    console.log('QR not in create response — fetching via /instance/connect/');
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    const qrResponse = await fetch(`${evolutionUrl}/instance/connect/${instanceName}`, {
+      method: 'GET',
+      headers: { 'apikey': evolutionKey, 'Content-Type': 'application/json' },
+    });
+
+    if (qrResponse.ok) {
+      const qrData = await qrResponse.json();
+      console.log('Connect response keys:', Object.keys(qrData));
+      finalQrcode = qrData.base64 || qrData.qrcode?.base64 || null;
+      console.log(`QR code from connect endpoint present: ${!!finalQrcode}`);
+    } else {
+      console.error('Connect endpoint failed:', qrResponse.status);
+    }
+  }
 
   // Update profile with session ID
   await supabaseAdmin
@@ -264,11 +289,19 @@ async function handleCreate(
     })
     .eq('id', userId);
 
+  if (!finalQrcode) {
+    console.error('QR code could not be obtained after all attempts');
+    return new Response(
+      JSON.stringify({ error: 'QR Code não pôde ser gerado. Tente novamente em alguns segundos.' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
   return new Response(
     JSON.stringify({
       success: true,
       connected: false,
-      qrcode: createData.qrcode?.base64,
+      qrcode: finalQrcode,
       instanceName,
     }),
     { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
