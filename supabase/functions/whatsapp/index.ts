@@ -253,30 +253,51 @@ async function handleCreate(
   }
 
   const createData = await createResponse.json();
-  console.log('Instance created. Response keys:', Object.keys(createData));
+  console.log('Instance created full response:', JSON.stringify(createData));
 
-  // Extract QR code from response (Evolution API may nest it differently)
-  const qrcode = createData.qrcode?.base64 || createData.base64 || null;
+  // Extract QR code - Evolution API nests it as qrcode.base64 or qrcode.qrcode.base64
+  const qrcode =
+    createData.qrcode?.base64 ||
+    createData.qrcode?.qrcode?.base64 ||
+    createData.base64 ||
+    null;
   console.log(`QR code present: ${!!qrcode}`);
 
-  // Step 3: If QR wasn't in create response, try fetching it explicitly
+  // Step 3: If QR wasn't in create response (status "close"), fetch via /instance/connect/
+  // The Evolution API sometimes needs a separate connect call to generate the QR code.
+  // Retry up to 3 times with increasing delays to handle async QR generation.
   let finalQrcode = qrcode;
   if (!finalQrcode) {
-    console.log('QR not in create response — fetching via /instance/connect/');
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    console.log('QR not in create response — fetching via /instance/connect/ with retries');
 
-    const qrResponse = await fetch(`${evolutionUrl}/instance/connect/${instanceName}`, {
-      method: 'GET',
-      headers: { 'apikey': evolutionKey, 'Content-Type': 'application/json' },
-    });
+    const delays = [2000, 3000, 4000];
+    for (let attempt = 0; attempt < delays.length; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+      console.log(`Connect attempt ${attempt + 1} of ${delays.length}`);
 
-    if (qrResponse.ok) {
-      const qrData = await qrResponse.json();
-      console.log('Connect response keys:', Object.keys(qrData));
-      finalQrcode = qrData.base64 || qrData.qrcode?.base64 || null;
-      console.log(`QR code from connect endpoint present: ${!!finalQrcode}`);
-    } else {
-      console.error('Connect endpoint failed:', qrResponse.status);
+      const qrResponse = await fetch(`${evolutionUrl}/instance/connect/${instanceName}`, {
+        method: 'GET',
+        headers: { 'apikey': evolutionKey, 'Content-Type': 'application/json' },
+      });
+
+      if (qrResponse.ok) {
+        const qrData = await qrResponse.json();
+        console.log('Connect response:', JSON.stringify(qrData));
+        finalQrcode =
+          qrData.base64 ||
+          qrData.qrcode?.base64 ||
+          qrData.code ||
+          null;
+
+        if (finalQrcode) {
+          console.log('QR code obtained on attempt', attempt + 1);
+          break;
+        }
+        console.log('QR not ready yet, retrying...');
+      } else {
+        const errText = await qrResponse.text();
+        console.error(`Connect attempt ${attempt + 1} failed:`, qrResponse.status, errText);
+      }
     }
   }
 
