@@ -256,15 +256,35 @@ async function handleCreate(
   const createData = await createResponse.json();
   console.log('Instance created full response:', JSON.stringify(createData));
 
-  // Extract QR code if already provided (sometimes comes directly in create response)
+  // Step 3: Initiate connection — without this the instance stays in "close" state
+  // and the QRCODE_UPDATED webhook is never fired by the Evolution API.
+  console.log(`Initiating connect for instance: ${instanceName}`);
+  const connectResponse = await fetch(`${evolutionUrl}/instance/connect/${instanceName}`, {
+    method: 'GET',
+    headers: {
+      'apikey': evolutionKey,
+      'Content-Type': 'application/json',
+    },
+  });
+  // deno-lint-ignore no-explicit-any
+  const connectData: any = await connectResponse.json().catch(() => ({}));
+  console.log(`Connect response (${connectResponse.status}):`, JSON.stringify(connectData));
+
+  if (!connectResponse.ok) {
+    console.warn(`Connect call returned ${connectResponse.status} — QR will still arrive via webhook if instance transitions correctly`);
+  }
+
+  // Extract QR code from connect response first, then fall back to create response
   const immediateQrcode =
+    connectData.base64 ||
+    connectData.qrcode?.base64 ||
     createData.qrcode?.base64 ||
     createData.qrcode?.qrcode?.base64 ||
     createData.base64 ||
     null;
   console.log(`Immediate QR code present: ${!!immediateQrcode}`);
 
-  // Update profile with session ID and clear any stale QR code
+  // Update profile with session ID and QR code (if available immediately)
   await supabaseAdmin
     .from('profiles')
     .update({
@@ -274,9 +294,9 @@ async function handleCreate(
     })
     .eq('id', userId);
 
-  // The QR code will arrive via QRCODE_UPDATED webhook and be saved to profiles.whatsapp_qr_code
-  // The frontend will poll the status endpoint which reads the QR from the DB
-  console.log('Instance created. QR code will arrive via webhook QRCODE_UPDATED.');
+  // If no immediate QR, the QRCODE_UPDATED webhook will fire after connect
+  // and save the QR to profiles.whatsapp_qr_code — frontend polls via action: 'status'
+  console.log('Instance created and connect initiated. QR code will arrive via webhook QRCODE_UPDATED.');
 
   return new Response(
     JSON.stringify({
