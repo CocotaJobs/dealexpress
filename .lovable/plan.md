@@ -1,109 +1,124 @@
 
-## Root Cause Analysis
+## Causa Raiz Confirmada
 
-### What's Breaking Everything
+O fluxo atual no `handleCreate` faz:
 
-The build error is the **single root cause** for the 500 error. The edge function cannot compile and therefore cannot deploy, so **every action** (create, status, disconnect, send-message) returns 500.
+1. Verifica estado da instância
+2. Se não estiver `"open"` → deleta instância antiga
+3. `POST /instance/create` → instância é criada mas permanece em estado `"close"`
+4. Aguarda webhook `QRCODE_UPDATED` → **nunca chega**, pois a instância está parada
 
-The error is at line 430 of `supabase/functions/whatsapp/index.ts`:
+**A chamada `POST /instance/connect/{instanceName}` está ausente.** Na Evolution API com Baileys, `create` apenas registra a instância internamente. É o `connect` que inicia o processo de autenticação WhatsApp e desencadeia os eventos `CONNECTION_UPDATE` (estado: `"connecting"`) e `QRCODE_UPDATED`.
 
-```
-TS2339: Property 'base64' does not exist on type
-  '{ state?: string | undefined; qrcode?: { base64?: string | undefined; } | undefined; }'
-```
+---
 
-The code reads:
-```ts
-const qrBase64 = data?.qrcode?.base64 || data?.base64 || null;
-```
-
-The `WebhookRequest` interface defines `data` as:
-```ts
-data: {
-  state?: string;
-  qrcode?: {
-    base64?: string;
-  };
-};
-```
-
-`data.base64` does not exist on this type. TypeScript rejects it, the function fails to compile, and every request returns 500 — including the `create` action that should generate the QR code.
-
-### Why This Regression Happened
-
-A previous edit introduced `data?.base64` as a fallback to handle different response structures from the Evolution API, but forgot to update the `WebhookRequest` interface to include the `base64` field at the top level of `data`. The interface and the code fell out of sync.
-
-### Full Flow After Fix (Confirmed Working Architecture)
+## Fluxo Correto (após a correção)
 
 ```text
-User clicks "Gerar QR Code"
-        │
-        ▼
-Frontend calls action: 'create'
-        │
-        ▼
 handleCreate:
-  1. Check instance state via /instance/connectionState/
-  2. If state != 'open' → logout + delete stale instance → wait 1s
-  3. POST /instance/create with webhook URL configured
-  4. Evolution API creates instance and responds
-  5. If QR code present in response → return it immediately
-  6. If not → return { waiting: true } → frontend starts polling
-        │
-        ▼ (async, via webhook)
-Evolution API sends QRCODE_UPDATED to /functions/v1/whatsapp
-        │
-        ▼
-handleWebhook saves QR base64 to profiles.whatsapp_qr_code
-        │
-        ▼
-Frontend polling calls action: 'status'
-        │
-        ▼
-handleStatus reads QR from DB → returns it → QR displayed
+  1. GET /instance/connectionState/{name}
+     ├── "open"    → retornar "já conectado"
+     └── outro     → logout + delete + aguardar 1s
+
+  2. POST /instance/create
+     └── instância criada em estado "close"
+
+  3. POST /instance/connect/{name}   ← STEP AUSENTE HOJE
+     └── instância vai para "connecting"
+     └── Evolution API dispara QRCODE_UPDATED via webhook
+
+  4. Retornar { waiting: true } ao frontend
+
+  5. Frontend faz polling (a cada 3s) chamando action: 'status'
+     └── handleStatus lê whatsapp_qr_code do banco
+     └── retorna QR ao frontend para exibir
 ```
 
-### The Fix — One Line Change
+---
 
-**File:** `supabase/functions/whatsapp/index.ts`
+## Alterações Necessárias
 
-**What to change:** Expand the `WebhookRequest` interface's `data` type to include the optional `base64` field at the top level, which the Evolution API sometimes sends directly (not nested under `qrcode`):
+### Arquivo: `supabase/functions/whatsapp/index.ts`
 
+**Somente na função `handleCreate`**, adicionar chamada `POST /instance/connect/{instanceName}` logo após o `POST /instance/create`:
+
+**Passo 1** — Após confirmar que `createResponse.ok`, chamar:
 ```ts
-// BEFORE (line 24-29):
-interface WebhookRequest {
-  action: 'webhook';
-  event: string;
-  instance: string;
-  data: {
-    state?: string;
-    qrcode?: {
-      base64?: string;
-    };
-  };
-}
+// Após criar a instância, iniciar a conexão para gerar QR Code
+console.log(`Initiating connect for instance: ${instanceName}`);
+const connectResponse = await fetch(`${evolutionUrl}/instance/connect/${instanceName}`, {
+  method: 'GET',  // Evolution API v2 usa GET para /instance/connect
+  headers: {
+    'apikey': evolutionKey,
+    'Content-Type': 'application/json',
+  },
+});
+const connectData = await connectResponse.json().catch(() => ({}));
+console.log(`Connect response (${connectResponse.status}):`, JSON.stringify(connectData));
+```
 
-// AFTER:
-interface WebhookRequest {
-  action: 'webhook';
-  event: string;
-  instance: string;
-  data: {
-    state?: string;
-    base64?: string;           // ← ADD THIS LINE
-    qrcode?: {
-      base64?: string;
-    };
-  };
+**Importante sobre o método HTTP:** A Evolution API v2 (Baileys) usa `GET /instance/connect/{instanceName}` — não `POST`. O retorno pode já incluir um QR Code diretamente no campo `base64` se a API gerar de forma síncrona, ou o QR chegará via webhook `QRCODE_UPDATED`.
+
+**Passo 2** — Verificar se o QR Code já veio na resposta do connect:
+```ts
+const immediateQrcode =
+  connectData.base64 ||
+  connectData.qrcode?.base64 ||
+  createData.qrcode?.base64 ||
+  createData.qrcode?.qrcode?.base64 ||
+  createData.base64 ||
+  null;
+```
+
+**Passo 3** — Se o connect retornar erro (non-ok), logar mas **não falhar** — o QR ainda chegará via webhook:
+```ts
+if (!connectResponse.ok) {
+  console.warn(`Connect call returned ${connectResponse.status} — QR will arrive via webhook`);
 }
 ```
 
-This makes the TypeScript type match the actual runtime code. No logic changes, no database changes, no frontend changes — just aligning the type declaration with the code that was already written.
+**Passo 4** — Salvar no banco e retornar `waiting: true` (ou o QR imediato se disponível):
+```ts
+await supabaseAdmin
+  .from('profiles')
+  .update({
+    whatsapp_session_id: instanceName,
+    whatsapp_connected: false,
+    whatsapp_qr_code: immediateQrcode || null,
+  })
+  .eq('id', userId);
 
-### Technical Details
+return new Response(
+  JSON.stringify({
+    success: true,
+    connected: false,
+    qrcode: immediateQrcode,
+    waiting: !immediateQrcode,
+    instanceName,
+  }),
+  { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+);
+```
 
-- **File changed:** `supabase/functions/whatsapp/index.ts` (1 line added to the interface)
-- **No database changes needed** — `whatsapp_qr_code` column was already added in the previous migration
-- **No frontend changes needed** — `useWhatsAppConnection.ts` is already correctly handling `waiting: true` and polling
-- **No RLS changes needed**
-- After the fix, the function will compile and deploy successfully, restoring the webhook-driven QR code flow for both João Vitor and André
+---
+
+## Resumo do que muda
+
+| Item | Antes | Depois |
+|---|---|---|
+| `POST /instance/create` | Sim | Sim |
+| `GET /instance/connect/{name}` | Não | **Sim — adicionado** |
+| QR Code via webhook | Nunca chegava | Chegará após connect |
+| Estado da instância | Permanecia `"close"` | Vai para `"connecting"` → `"qr"` |
+| Arquivo alterado | — | `supabase/functions/whatsapp/index.ts` |
+| Alterações no banco | Nenhuma | Nenhuma |
+| Alterações no frontend | Nenhuma | Nenhuma |
+| Alterações em RLS | Nenhuma | Nenhuma |
+
+---
+
+## Detalhe Técnico
+
+A função `handleCreate` atual tem **293 linhas** (linhas 152–291 no arquivo). A mudança está concentrada entre as linhas 256–290 — apenas inserir a chamada de connect e atualizar a lógica de extração do QR Code para considerar também a resposta do connect.
+
+Nenhuma outra função (`handleStatus`, `handleWebhook`, `handleDisconnect`, `handleSendMessage`) precisa ser alterada.
