@@ -23,6 +23,7 @@ interface WebhookRequest {
   instance: string;
   data: {
     state?: string;
+    base64?: string;
     qrcode?: {
       base64?: string;
     };
