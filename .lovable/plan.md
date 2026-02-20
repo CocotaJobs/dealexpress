@@ -1,72 +1,56 @@
 
+## Diagnóstico: Por que o QR Code não está sendo gerado
 
-## Correcao Definitiva: Onboarding do Sergio e Robustez do Trigger
+### O que foi encontrado
 
-### Problema
+Testando diretamente o backend, a resposta para `action: "create"` foi:
+```json
+{ "success": true, "connected": false, "instanceName": "user_..." }
+```
+Ou seja: `qrcode` ausente. O frontend detecta isso e exibe "QR Code não recebido".
 
-O Sergio se registrou com o token de convite correto (presente no metadata), mas o trigger `handle_new_user` nao vinculou ele a organizacao correta. O mesmo problema que ocorreu com o Eduardo.
-
-Dados atuais do Sergio:
-- Organizacao: "Sergio Felipe's Organization" (errada, orfan - `cbc76f4a`)
-- Cargo: admin (deveria ser admin na org do Joao Vitor)
-- Convite: ainda "pending" (nunca foi aceito)
-- Org correta: `9940b4bb` (Joao Vitor Felipe's Organization)
+E o status atual da instância é:
+```json
+{ "connected": false, "state": "connecting" }
+```
 
 ### Causa raiz
 
-Apos analise exaustiva (token correto no metadata, convite valido, migration aplicada, trigger habilitado, postgres com bypassrls), a causa mais provavel eh que as verificacoes `RECORD IS NULL` e `RECORD IS NOT NULL` no PL/pgSQL nao funcionam de forma confiavel para variaveis do tipo `RECORD` apos `SELECT INTO` sem resultados. O comportamento padrao do PostgreSQL eh:
-- Se nenhuma linha eh retornada, os campos do RECORD sao setados para NULL
-- `record IS NULL` retorna TRUE somente se TODOS os campos sao NULL
-- Mas o comportamento pode variar dependendo da versao e contexto de execucao
+O problema tem **duas camadas**:
 
-A variavel especial `FOUND` (automaticamente setada pelo PL/pgSQL apos cada SELECT/INSERT/UPDATE/DELETE) eh a forma confiavel e recomendada pela documentacao do PostgreSQL para verificar se um SELECT INTO retornou resultados.
+**Camada 1 — Instância presa em "connecting"**: A Evolution API mantém uma instância criada anteriormente num estado `"connecting"` (nem conectada, nem desconectada). Quando o usuário tenta gerar um novo QR Code, a função detecta que a instância existe e tenta buscar o QR via `GET /instance/connect/{name}`. Porém a Evolution API pode não retornar o QR nesse endpoint se a instância não foi reiniciada.
 
-### Solucao em 2 partes
+**Camada 2 — Lógica de fallback incompleta**: Quando a instância existe mas não está `"open"`, o código faz `GET /instance/connect/{instanceName}` mas **não trata o caso em que a Evolution API não devolve o QR imediatamente** (já que o QR ainda está sendo gerado de forma assíncrona). Nessa situação, `qrData.base64` e `qrData.qrcode?.base64` são ambos `undefined`, resultando em `qrcode: undefined` na resposta — e o frontend joga o erro.
 
----
+### Solução
 
-### Parte 1: Corrigir dados do Sergio (SQL direto)
-
-- Mover perfil do Sergio para `9940b4bb` (Joao Vitor Felipe's Organization)
-- Manter cargo `admin` (conforme o convite)
-- Marcar convite `6b3f2ade` como `accepted`
-- Deletar organizacao orfan `cbc76f4a`
-
----
-
-### Parte 2: Reescrever verificacoes do trigger usando FOUND
-
-Substituir TODAS as verificacoes `invitation_record IS NULL` e `invitation_record IS NOT NULL` pela variavel `FOUND`, que eh a forma padrao e confiavel do PL/pgSQL:
+Reescrever a função `handleCreate` no backend com a seguinte lógica robusta:
 
 ```text
-Antes (nao confiavel):
-  SELECT i.* INTO invitation_record FROM invitations ...;
-  IF invitation_record IS NULL THEN ...
-
-Depois (confiavel):
-  SELECT i.* INTO invitation_record FROM invitations ...;
-  IF NOT FOUND THEN ...
+1. Checar estado atual da instância
+   ├── "open" → já conectada, retornar success
+   └── qualquer outro estado (connecting, close, etc.)
+       ├── DELETAR a instância existente (logout + delete)
+       └── Aguardar 1 segundo
+           └── CRIAR nova instância → retorna QR garantido
 ```
 
-Mudancas especificas no trigger `handle_new_user`:
-1. Verificacao de perfil duplicado: trocar `IF existing_profile_id IS NOT NULL` por usar FOUND
-2. Lookup por token: trocar `IF invitation_record IS NULL` por `IF NOT FOUND`
-3. Decisao final (criar em org do convite vs nova org): usar variavel booleana `invitation_found` setada via FOUND
+**Por que deletar e recriar?** É a única forma confiável de obter um novo QR Code válido da Evolution API. Tentar reconectar uma instância presa em "connecting" raramente funciona, e o QR gerado pode ser inválido ou nunca chegar.
 
-Nenhuma mudanca na logica de negocio - apenas nas verificacoes de resultado de queries.
+### Arquivos a alterar
 
----
+**Apenas 1 arquivo**: `supabase/functions/whatsapp/index.ts`
+
+Especificamente a função `handleCreate` (linhas 151–276):
+- Adicionar lógica de delete antes de recriar (quando o estado não é "open")
+- Adicionar log detalhado do retorno da Evolution API para facilitar debug futuro
+- Adicionar tratamento de caso em que o QR não vem imediatamente na criação (aguardar e tentar buscar via `/instance/connect/`)
+- Garantir que a resposta sempre retorne `qrcode` ou um erro claro
 
 ### Impacto
 
-- Corrige os dados do Sergio imediatamente
-- Torna o trigger robusto contra o bug de RECORD IS NULL
-- Nenhuma mudanca em RLS, autenticacao ou codigo frontend
-- Nenhuma funcionalidade comprometida
-
-### Verificacao pos-correcao
-
-1. Confirmar que Sergio esta na organizacao correta com cargo admin
-2. Confirmar que convite esta marcado como accepted
-3. Confirmar que organizacao orfan foi deletada
-4. Executar scan de seguranca
+- Nenhuma alteração no banco de dados
+- Nenhuma alteração no frontend
+- Nenhuma alteração em RLS ou segurança
+- O comportamento para usuários já conectados (`"open"`) permanece idêntico
+- André e João Vitor poderão gerar o QR Code normalmente
