@@ -50,6 +50,7 @@ import {
   Filter,
   FileText,
   Loader2,
+  Send,
 } from 'lucide-react';
 import { useProposals } from '@/hooks/useProposals';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -69,7 +70,7 @@ const statusVariants: Record<string, string> = {
 export default function Proposals() {
   const { profile } = useAuth();
   const isAdmin = profile?.role === 'admin';
-  const { proposals, isLoading, duplicateProposal, deleteProposal } = useProposals();
+  const { proposals, isLoading, duplicateProposal, deleteProposal, sendProposal } = useProposals();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [search, setSearch] = useState('');
@@ -93,6 +94,8 @@ export default function Proposals() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
+  const [markingSentId, setMarkingSentId] = useState<string | null>(null);
+  const [isMarkingSent, setIsMarkingSent] = useState(false);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -131,6 +134,14 @@ export default function Proposals() {
     setSelectedIds([]);
     setIsBulkDeleting(false);
     setShowBulkDeleteDialog(false);
+  };
+
+  const handleMarkAsSent = async () => {
+    if (!markingSentId) return;
+    setIsMarkingSent(true);
+    await sendProposal(markingSentId);
+    setIsMarkingSent(false);
+    setMarkingSentId(null);
   };
 
   const filteredProposals = proposals.filter((proposal) => {
@@ -370,6 +381,14 @@ export default function Proposals() {
                             )}
                             Duplicar
                           </DropdownMenuItem>
+                          {proposal.status === 'draft' && (
+                            <DropdownMenuItem
+                              onClick={() => setMarkingSentId(proposal.id)}
+                            >
+                              <Send className="w-4 h-4 mr-2" />
+                              Marcar como Enviada
+                            </DropdownMenuItem>
+                          )}
                           {proposal.status !== 'draft' && (
                             <DropdownMenuItem className="flex items-center gap-2">
                               <FileDown className="w-4 h-4" />
@@ -440,6 +459,28 @@ export default function Proposals() {
             >
               {isBulkDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Excluir {selectedIds.length}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Mark as Sent Confirmation Dialog */}
+      <AlertDialog open={!!markingSentId} onOpenChange={() => setMarkingSentId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Marcar como Enviada</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja marcar esta proposta como enviada? O status será alterado de "Rascunho" para "Enviada".
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isMarkingSent}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleMarkAsSent}
+              disabled={isMarkingSent}
+            >
+              {isMarkingSent && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Confirmar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
