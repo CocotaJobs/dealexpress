@@ -1,124 +1,71 @@
 
-## Causa Raiz Confirmada
 
-O fluxo atual no `handleCreate` faz:
+## Migração do PDF.co para LightPDF
 
-1. Verifica estado da instância
-2. Se não estiver `"open"` → deleta instância antiga
-3. `POST /instance/create` → instância é criada mas permanece em estado `"close"`
-4. Aguarda webhook `QRCODE_UPDATED` → **nunca chega**, pois a instância está parada
-
-**A chamada `POST /instance/connect/{instanceName}` está ausente.** Na Evolution API com Baileys, `create` apenas registra a instância internamente. É o `connect` que inicia o processo de autenticação WhatsApp e desencadeia os eventos `CONNECTION_UPDATE` (estado: `"connecting"`) e `QRCODE_UPDATED`.
+Substituir o serviço de conversão DOCX para PDF, trocando o PDF.co pelo LightPDF, sem alterar nenhuma outra funcionalidade.
 
 ---
 
-## Fluxo Correto (após a correção)
+## Como funciona a API da LightPDF
+
+A LightPDF usa um fluxo assíncrono em 2 etapas:
 
 ```text
-handleCreate:
-  1. GET /instance/connectionState/{name}
-     ├── "open"    → retornar "já conectado"
-     └── outro     → logout + delete + aguardar 1s
+1. POST /api/tasks/document/conversion
+   - Header: X-API-KEY
+   - Body: form-data com file (DOCX) + format ("pdf")
+   - Retorna: task_id
 
-  2. POST /instance/create
-     └── instância criada em estado "close"
-
-  3. POST /instance/connect/{name}   ← STEP AUSENTE HOJE
-     └── instância vai para "connecting"
-     └── Evolution API dispara QRCODE_UPDATED via webhook
-
-  4. Retornar { waiting: true } ao frontend
-
-  5. Frontend faz polling (a cada 3s) chamando action: 'status'
-     └── handleStatus lê whatsapp_qr_code do banco
-     └── retorna QR ao frontend para exibir
+2. GET /api/tasks/document/conversion/{task_id}  (polling a cada 1s, max 30s)
+   - Header: X-API-KEY
+   - Retorna: state (1 = pronto, <0 = erro, 4 = processando)
+   - Quando state=1: campo "file" contém URL de download do PDF
 ```
+
+Base URL: `https://techhk.aoscdn.com`
 
 ---
 
 ## Alterações Necessárias
 
-### Arquivo: `supabase/functions/whatsapp/index.ts`
+### 1. Adicionar secret LIGHTPDF_API_KEY
 
-**Somente na função `handleCreate`**, adicionar chamada `POST /instance/connect/{instanceName}` logo após o `POST /instance/create`:
+- Valor: `wxll09r7i3968xh5c`
+- Armazenar como secret no backend para uso na Edge Function
 
-**Passo 1** — Após confirmar que `createResponse.ok`, chamar:
-```ts
-// Após criar a instância, iniciar a conexão para gerar QR Code
-console.log(`Initiating connect for instance: ${instanceName}`);
-const connectResponse = await fetch(`${evolutionUrl}/instance/connect/${instanceName}`, {
-  method: 'GET',  // Evolution API v2 usa GET para /instance/connect
-  headers: {
-    'apikey': evolutionKey,
-    'Content-Type': 'application/json',
-  },
-});
-const connectData = await connectResponse.json().catch(() => ({}));
-console.log(`Connect response (${connectResponse.status}):`, JSON.stringify(connectData));
-```
+### 2. Arquivo: `supabase/functions/generate-pdf/index.ts`
 
-**Importante sobre o método HTTP:** A Evolution API v2 (Baileys) usa `GET /instance/connect/{instanceName}` — não `POST`. O retorno pode já incluir um QR Code diretamente no campo `base64` se a API gerar de forma síncrona, ou o QR chegará via webhook `QRCODE_UPDATED`.
+**Substituir a função `convertDocxToPdfWithPdfCo`** (linhas 345-430) por uma nova função `convertDocxToPdfWithLightPdf` que:
 
-**Passo 2** — Verificar se o QR Code já veio na resposta do connect:
-```ts
-const immediateQrcode =
-  connectData.base64 ||
-  connectData.qrcode?.base64 ||
-  createData.qrcode?.base64 ||
-  createData.qrcode?.qrcode?.base64 ||
-  createData.base64 ||
-  null;
-```
+- Lê a secret `LIGHTPDF_API_KEY` em vez de `PDFCO_API_KEY`
+- **Etapa 1**: Envia o DOCX via `POST https://techhk.aoscdn.com/api/tasks/document/conversion` com `form-data` contendo `file` e `format=pdf`, header `X-API-KEY`
+- **Etapa 2**: Faz polling em `GET https://techhk.aoscdn.com/api/tasks/document/conversion/{task_id}` a cada 1 segundo, por no máximo 30 segundos
+  - `state === 1` → sucesso, baixa o PDF da URL no campo `file`
+  - `state < 0` → erro, lança exceção com mensagem descritiva
+  - `state === 4` ou outros → continua polling
+- **Etapa 3**: Baixa o PDF da URL retornada e retorna como `Uint8Array`
 
-**Passo 3** — Se o connect retornar erro (non-ok), logar mas **não falhar** — o QR ainda chegará via webhook:
-```ts
-if (!connectResponse.ok) {
-  console.warn(`Connect call returned ${connectResponse.status} — QR will arrive via webhook`);
-}
-```
+**Atualizar a chamada** na linha 930: trocar `convertDocxToPdfWithPdfCo` por `convertDocxToPdfWithLightPdf`
 
-**Passo 4** — Salvar no banco e retornar `waiting: true` (ou o QR imediato se disponível):
-```ts
-await supabaseAdmin
-  .from('profiles')
-  .update({
-    whatsapp_session_id: instanceName,
-    whatsapp_connected: false,
-    whatsapp_qr_code: immediateQrcode || null,
-  })
-  .eq('id', userId);
+**Atualizar o tratamento de erros** (linhas 939-960): trocar referências a "PDF.co" por "LightPDF" nas mensagens de erro, e detectar erros de crédito do LightPDF (status 401/429 e states negativos)
 
-return new Response(
-  JSON.stringify({
-    success: true,
-    connected: false,
-    qrcode: immediateQrcode,
-    waiting: !immediateQrcode,
-    instanceName,
-  }),
-  { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-);
-```
+### 3. Nenhuma outra alteração
+
+- Frontend: sem mudanças
+- Banco de dados: sem mudanças
+- RLS: sem mudanças
+- Outras Edge Functions: sem mudanças
 
 ---
 
-## Resumo do que muda
+## Resumo
 
 | Item | Antes | Depois |
 |---|---|---|
-| `POST /instance/create` | Sim | Sim |
-| `GET /instance/connect/{name}` | Não | **Sim — adicionado** |
-| QR Code via webhook | Nunca chegava | Chegará após connect |
-| Estado da instância | Permanecia `"close"` | Vai para `"connecting"` → `"qr"` |
-| Arquivo alterado | — | `supabase/functions/whatsapp/index.ts` |
-| Alterações no banco | Nenhuma | Nenhuma |
-| Alterações no frontend | Nenhuma | Nenhuma |
-| Alterações em RLS | Nenhuma | Nenhuma |
+| Serviço de conversão | PDF.co | LightPDF |
+| Secret usada | PDFCO_API_KEY | LIGHTPDF_API_KEY |
+| Método de upload | Base64 via JSON | Form-data (file upload direto) |
+| Conversão | Síncrona | Assíncrona (polling por task_id) |
+| Arquivo alterado | -- | `supabase/functions/generate-pdf/index.ts` |
+| Impacto em outras funcionalidades | -- | Nenhum |
 
----
-
-## Detalhe Técnico
-
-A função `handleCreate` atual tem **293 linhas** (linhas 152–291 no arquivo). A mudança está concentrada entre as linhas 256–290 — apenas inserir a chamada de connect e atualizar a lógica de extração do QR Code para considerar também a resposta do connect.
-
-Nenhuma outra função (`handleStatus`, `handleWebhook`, `handleDisconnect`, `handleSendMessage`) precisa ser alterada.
