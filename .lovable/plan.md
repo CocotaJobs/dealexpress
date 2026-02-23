@@ -1,71 +1,46 @@
 
 
-## Migração do PDF.co para LightPDF
+## Marcar Proposta como Enviada Manualmente
 
-Substituir o serviço de conversão DOCX para PDF, trocando o PDF.co pelo LightPDF, sem alterar nenhuma outra funcionalidade.
-
----
-
-## Como funciona a API da LightPDF
-
-A LightPDF usa um fluxo assíncrono em 2 etapas:
-
-```text
-1. POST /api/tasks/document/conversion
-   - Header: X-API-KEY
-   - Body: form-data com file (DOCX) + format ("pdf")
-   - Retorna: task_id
-
-2. GET /api/tasks/document/conversion/{task_id}  (polling a cada 1s, max 30s)
-   - Header: X-API-KEY
-   - Retorna: state (1 = pronto, <0 = erro, 4 = processando)
-   - Quando state=1: campo "file" contém URL de download do PDF
-```
-
-Base URL: `https://techhk.aoscdn.com`
+Adicionar um botão/opção que permite ao usuário alterar manualmente o status de uma proposta de "Rascunho" para "Enviada", sem precisar enviar via WhatsApp.
 
 ---
 
-## Alterações Necessárias
+## Alterações
 
-### 1. Adicionar secret LIGHTPDF_API_KEY
+### 1. Arquivo: `src/pages/Proposals.tsx`
 
-- Valor: `wxll09r7i3968xh5c`
-- Armazenar como secret no backend para uso na Edge Function
+Adicionar uma nova opção no menu dropdown (DropdownMenu) de cada proposta com status "draft":
+- Novo item "Marcar como Enviada" com icone `Send`
+- Aparece entre "Duplicar" e "Excluir" para propostas em rascunho
+- Exibe dialog de confirmacao antes de alterar o status
+- Chama `sendProposal(id)` do hook `useProposals` (que ja existe e faz exatamente isso: atualiza status para "sent" e seta `sent_at`)
 
-### 2. Arquivo: `supabase/functions/generate-pdf/index.ts`
+Estado adicional necessario:
+- `markingSentId` para controlar loading no item do menu
+- `AlertDialog` de confirmacao para evitar cliques acidentais
 
-**Substituir a função `convertDocxToPdfWithPdfCo`** (linhas 345-430) por uma nova função `convertDocxToPdfWithLightPdf` que:
+### 2. Arquivo: `src/pages/ViewProposal.tsx`
 
-- Lê a secret `LIGHTPDF_API_KEY` em vez de `PDFCO_API_KEY`
-- **Etapa 1**: Envia o DOCX via `POST https://techhk.aoscdn.com/api/tasks/document/conversion` com `form-data` contendo `file` e `format=pdf`, header `X-API-KEY`
-- **Etapa 2**: Faz polling em `GET https://techhk.aoscdn.com/api/tasks/document/conversion/{task_id}` a cada 1 segundo, por no máximo 30 segundos
-  - `state === 1` → sucesso, baixa o PDF da URL no campo `file`
-  - `state < 0` → erro, lança exceção com mensagem descritiva
-  - `state === 4` ou outros → continua polling
-- **Etapa 3**: Baixa o PDF da URL retornada e retorna como `Uint8Array`
+Adicionar um botao "Marcar como Enviada" na area de acoes do header, visivel apenas quando o status e "draft":
+- Botao com icone `Send` e variante `outline`
+- Exibe dialog de confirmacao
+- Chama `sendProposal(proposal.id)` e recarrega a proposta apos sucesso
 
-**Atualizar a chamada** na linha 930: trocar `convertDocxToPdfWithPdfCo` por `convertDocxToPdfWithLightPdf`
+### 3. Nenhuma outra alteracao
 
-**Atualizar o tratamento de erros** (linhas 939-960): trocar referências a "PDF.co" por "LightPDF" nas mensagens de erro, e detectar erros de crédito do LightPDF (status 401/429 e states negativos)
-
-### 3. Nenhuma outra alteração
-
-- Frontend: sem mudanças
-- Banco de dados: sem mudanças
-- RLS: sem mudanças
-- Outras Edge Functions: sem mudanças
+- O hook `useProposals` ja possui a funcao `sendProposal` que faz o UPDATE no banco setando `status = 'sent'` e `sent_at = now()`
+- Banco de dados: sem mudancas
+- RLS: ja permite update de propostas pelo criador ou admin
+- Edge Functions: sem mudancas
 
 ---
 
 ## Resumo
 
-| Item | Antes | Depois |
-|---|---|---|
-| Serviço de conversão | PDF.co | LightPDF |
-| Secret usada | PDFCO_API_KEY | LIGHTPDF_API_KEY |
-| Método de upload | Base64 via JSON | Form-data (file upload direto) |
-| Conversão | Síncrona | Assíncrona (polling por task_id) |
-| Arquivo alterado | -- | `supabase/functions/generate-pdf/index.ts` |
-| Impacto em outras funcionalidades | -- | Nenhum |
+| Local | Mudanca |
+|---|---|
+| `src/pages/Proposals.tsx` | Nova opcao "Marcar como Enviada" no dropdown + dialog de confirmacao |
+| `src/pages/ViewProposal.tsx` | Novo botao "Marcar como Enviada" no header + dialog de confirmacao |
+| Backend | Nenhuma (reutiliza `sendProposal` existente) |
 
