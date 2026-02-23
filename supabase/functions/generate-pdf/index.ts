@@ -900,14 +900,14 @@ Deno.serve(async (req) => {
         docxBuffer = await processDocxTemplate(templateBuffer, proposalData);
         console.log('DOCX processed with dynamic fields');
 
-        // Save the processed DOCX to storage
+        // Save the processed DOCX to storage (use octet-stream to avoid mime type restrictions)
         const docxFileName = `${proposal.organization_id}/${proposal.proposal_number}.docx`;
         
         const { error: docxUploadError } = await supabaseAdmin
           .storage
           .from('generated-pdfs')
           .upload(docxFileName, docxBuffer, {
-            contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            contentType: 'application/octet-stream',
             cacheControl: '0',
             upsert: true,
           });
@@ -927,37 +927,25 @@ Deno.serve(async (req) => {
         }
 
         // Convert DOCX to PDF using PDF.co
-        pdfBuffer = await convertDocxToPdfWithPdfCo(docxBuffer, `${proposal.proposal_number}.docx`);
-        usedCustomTemplate = true;
+        try {
+          pdfBuffer = await convertDocxToPdfWithPdfCo(docxBuffer, `${proposal.proposal_number}.docx`);
+          usedCustomTemplate = true;
+          console.log('PDF generated from custom template via PDF.co');
+        } catch (pdfCoError) {
+          console.error('PDF.co conversion failed, falling back to default PDF generator:', pdfCoError);
+          // Fallback: generate PDF using pdf-lib default layout
+          pdfBuffer = await generateDefaultPdf(proposalData);
+          usedCustomTemplate = false;
+          console.log('PDF generated using fallback default generator');
+        }
 
-        console.log('PDF generated from custom template via PDF.co');
       } catch (templateProcessError) {
         console.error('Error processing custom template:', templateProcessError);
         
-        // Extract useful error message for the user (without exposing internal details)
-        let errorMessage = 'Erro ao processar template';
-        let errorDetails = 'Verifique se o template está formatado corretamente.';
-        
-        // deno-lint-ignore no-explicit-any
-        const tplError = templateProcessError as any;
-        if (tplError?.properties?.errors) {
-          const errors = tplError.properties.errors;
-          const firstError = errors[0];
-          if (firstError?.properties?.xtag) {
-            // Sanitize tag name - only show first 20 chars max
-            const tagName = String(firstError.properties.xtag).substring(0, 20);
-            errorMessage = `Erro na tag do template`;
-            errorDetails = `Verifique a tag "${tagName}". Dica: Abra o template Word, delete completamente a tag e digite-a novamente de uma só vez, sem pausas.`;
-          }
-        }
-        
-        return new Response(
-          JSON.stringify({ 
-            error: errorMessage, 
-            details: errorDetails 
-          }),
-          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+        // Template processing itself failed — fall back to default PDF
+        console.log('Falling back to default PDF generator due to template error');
+        pdfBuffer = await generateDefaultPdf(proposalData);
+        usedCustomTemplate = false;
       }
     } else {
       console.error('No active template found - template is required');
