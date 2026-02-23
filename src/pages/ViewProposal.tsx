@@ -12,6 +12,16 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   User,
   Building2,
   Mail,
@@ -25,6 +35,7 @@ import {
   Calendar,
   Clock,
   Loader2,
+  CheckCircle,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -58,6 +69,8 @@ export default function ViewProposal() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
+  const [showMarkSentDialog, setShowMarkSentDialog] = useState(false);
+  const [isMarkingSent, setIsMarkingSent] = useState(false);
 
   // PDF Preview Dialog state
   const [isPreviewDialogOpen, setIsPreviewDialogOpen] = useState(false);
@@ -256,6 +269,15 @@ export default function ViewProposal() {
     }
   };
 
+  const handleMarkAsSent = async () => {
+    if (!proposal) return;
+    setIsMarkingSent(true);
+    await sendProposal(proposal.id);
+    await fetchProposal(proposal.id);
+    setIsMarkingSent(false);
+    setShowMarkSentDialog(false);
+  };
+
   if (isLoading) {
     return (
       <div className="p-6 space-y-6 animate-in">
@@ -327,6 +349,15 @@ export default function ViewProposal() {
             )}
             Baixar PDF
           </Button>
+          {proposal.status === 'draft' && (
+            <Button
+              variant="outline"
+              onClick={() => setShowMarkSentDialog(true)}
+            >
+              <CheckCircle className="w-4 h-4 mr-2" />
+              Marcar como Enviada
+            </Button>
+          )}
           {proposal.status === 'draft' && (
             <Button
               onClick={handleSendProposal}
@@ -534,6 +565,28 @@ export default function ViewProposal() {
         isLoading={isPreviewing}
         onDownload={handleDownloadFromPreview}
       />
+
+      {/* Mark as Sent Confirmation Dialog */}
+      <AlertDialog open={showMarkSentDialog} onOpenChange={setShowMarkSentDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Marcar como Enviada</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja marcar esta proposta como enviada? O status será alterado de "Rascunho" para "Enviada".
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isMarkingSent}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleMarkAsSent}
+              disabled={isMarkingSent}
+            >
+              {isMarkingSent && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Confirmar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
