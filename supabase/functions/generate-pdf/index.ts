@@ -927,25 +927,42 @@ Deno.serve(async (req) => {
         }
 
         // Convert DOCX to PDF using PDF.co
-        try {
-          pdfBuffer = await convertDocxToPdfWithPdfCo(docxBuffer, `${proposal.proposal_number}.docx`);
-          usedCustomTemplate = true;
-          console.log('PDF generated from custom template via PDF.co');
-        } catch (pdfCoError) {
-          console.error('PDF.co conversion failed, falling back to default PDF generator:', pdfCoError);
-          // Fallback: generate PDF using pdf-lib default layout
-          pdfBuffer = await generateDefaultPdf(proposalData);
-          usedCustomTemplate = false;
-          console.log('PDF generated using fallback default generator');
-        }
+        pdfBuffer = await convertDocxToPdfWithPdfCo(docxBuffer, `${proposal.proposal_number}.docx`);
+        usedCustomTemplate = true;
+        console.log('PDF generated from custom template via PDF.co');
 
       } catch (templateProcessError) {
         console.error('Error processing custom template:', templateProcessError);
         
-        // Template processing itself failed — fall back to default PDF
-        console.log('Falling back to default PDF generator due to template error');
-        pdfBuffer = await generateDefaultPdf(proposalData);
-        usedCustomTemplate = false;
+        const errorMsg = templateProcessError instanceof Error ? templateProcessError.message : String(templateProcessError);
+        
+        // Detect PDF.co credit/payment errors
+        const isCreditsError = /402|no credits|payment|insufficient/i.test(errorMsg);
+        
+        let userMessage = 'Erro ao processar template';
+        let userDetails = 'Verifique se o template está formatado corretamente.';
+        
+        if (isCreditsError) {
+          userMessage = 'Créditos insuficientes no serviço de conversão';
+          userDetails = 'Os créditos do PDF.co acabaram. Entre em contato com o administrador para renovar os créditos.';
+        } else {
+          // Check for docxtemplater tag errors
+          // deno-lint-ignore no-explicit-any
+          const tplError = templateProcessError as any;
+          if (tplError?.properties?.errors) {
+            const firstError = tplError.properties.errors[0];
+            if (firstError?.properties?.xtag) {
+              const tagName = String(firstError.properties.xtag).substring(0, 20);
+              userMessage = 'Erro na tag do template';
+              userDetails = `Verifique a tag "${tagName}". Dica: Abra o template Word, delete completamente a tag e digite-a novamente de uma só vez, sem pausas.`;
+            }
+          }
+        }
+        
+        return new Response(
+          JSON.stringify({ error: userMessage, details: userDetails }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
     } else {
       console.error('No active template found - template is required');
