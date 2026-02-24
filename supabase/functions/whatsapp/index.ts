@@ -80,10 +80,24 @@ Deno.serve(async (req) => {
   const supabaseAdmin: any = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
-    const body: RequestBody = await req.json();
-    const { action } = body;
+    // deno-lint-ignore no-explicit-any
+    const body: any = await req.json();
 
-    // Webhook doesn't require authentication
+    // Auto-detect Evolution API webhook format: has event+instance but no action
+    if (!body.action && body.event && body.instance) {
+      console.log('Auto-detected Evolution API webhook:', body.event, body.instance);
+      const webhookBody: WebhookRequest = {
+        action: 'webhook',
+        event: body.event,
+        instance: body.instance,
+        data: body.data || {},
+      };
+      return handleWebhook(webhookBody, supabaseAdmin);
+    }
+
+    const { action } = body as RequestBody;
+
+    // Webhook with explicit action (legacy support)
     if (action === 'webhook') {
       return handleWebhook(body as WebhookRequest, supabaseAdmin);
     }
