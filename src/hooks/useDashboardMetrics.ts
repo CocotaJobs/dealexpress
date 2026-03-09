@@ -25,6 +25,12 @@ interface TopItem {
   count: number;
 }
 
+interface VendorStats {
+  name: string;
+  count: number;
+  value: number;
+}
+
 interface DashboardMetrics {
   proposals: ProposalStats;
   items: {
