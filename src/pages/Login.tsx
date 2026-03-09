@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react';
 import { useThemedLogo } from '@/hooks/useThemedLogo';
 export default function Login() {
+  const themedLogo = useThemedLogo();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
