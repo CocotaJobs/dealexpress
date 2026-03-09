@@ -587,7 +587,7 @@ export default function Dashboard() {
                     />
                     <Bar 
                       dataKey="count" 
-                      fill="hsl(var(--chart-2))" 
+                      fill="hsl(var(--primary))" 
                       radius={[0, 4, 4, 0]}
                       isAnimationActive={true}
                       animationDuration={1200}
