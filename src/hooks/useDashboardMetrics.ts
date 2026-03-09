@@ -25,6 +25,12 @@ interface TopItem {
   count: number;
 }
 
+interface VendorStats {
+  name: string;
+  count: number;
+  value: number;
+}
+
 interface DashboardMetrics {
   proposals: ProposalStats;
   items: {
@@ -41,6 +47,7 @@ interface DashboardMetrics {
   };
   monthlyData: MonthlyData[];
   topItems: TopItem[];
+  proposalsByVendor: VendorStats[];
   previousMonthComparison: {
     proposalsChange: number;
     valueChange: number;
@@ -59,6 +66,7 @@ const initialMetrics: DashboardMetrics = {
   templates: { total: 0, active: 0 },
   monthlyData: [],
   topItems: [],
+  proposalsByVendor: [],
   previousMonthComparison: { proposalsChange: 0, valueChange: 0 },
 };
 
@@ -80,10 +88,10 @@ export function useDashboardMetrics() {
         usersResult,
         templatesResult,
       ] = await Promise.all([
-        supabase.from('proposals').select('id, status, created_at'),
+        supabase.from('proposals').select('id, status, created_at, created_by'),
         supabase.from('proposal_items').select('item_name, subtotal, proposal_id'),
         supabase.from('items').select('id, active'),
-        supabase.from('profiles_safe').select('id, active'),
+        supabase.from('profiles_safe').select('id, name, active'),
         supabase.from('templates').select('id, is_active'),
       ]);
 
@@ -166,6 +174,30 @@ export function useDashboardMetrics() {
         .sort((a, b) => b.count - a.count)
         .slice(0, 5);
 
+      // Proposals by vendor
+      const vendorCounts: Record<string, { count: number; value: number }> = {};
+      proposals.forEach((p) => {
+        if (!vendorCounts[p.created_by]) {
+          vendorCounts[p.created_by] = { count: 0, value: 0 };
+        }
+        vendorCounts[p.created_by].count++;
+        vendorCounts[p.created_by].value += proposalTotals[p.id] || 0;
+      });
+
+      const userNameMap = new Map<string, string>();
+      users.forEach((u) => {
+        if (u.id && u.name) userNameMap.set(u.id, u.name);
+      });
+
+      const proposalsByVendor = Object.entries(vendorCounts)
+        .map(([userId, stats]) => ({
+          name: userNameMap.get(userId) || 'Desconhecido',
+          count: stats.count,
+          value: stats.value,
+        }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10);
+
       setMetrics({
         proposals: {
           total: proposals.length,
@@ -187,6 +219,7 @@ export function useDashboardMetrics() {
         },
         monthlyData,
         topItems,
+        proposalsByVendor,
         previousMonthComparison: {
           proposalsChange: Math.round(proposalsChange),
           valueChange: Math.round(valueChange),
