@@ -66,6 +66,7 @@ const initialMetrics: DashboardMetrics = {
   templates: { total: 0, active: 0 },
   monthlyData: [],
   topItems: [],
+  proposalsByVendor: [],
   previousMonthComparison: { proposalsChange: 0, valueChange: 0 },
 };
 
