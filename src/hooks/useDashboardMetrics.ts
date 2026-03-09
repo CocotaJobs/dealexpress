@@ -88,7 +88,7 @@ export function useDashboardMetrics() {
         usersResult,
         templatesResult,
       ] = await Promise.all([
-        supabase.from('proposals').select('id, status, created_at'),
+        supabase.from('proposals').select('id, status, created_at, created_by'),
         supabase.from('proposal_items').select('item_name, subtotal, proposal_id'),
         supabase.from('items').select('id, active'),
         supabase.from('profiles_safe').select('id, active'),
