@@ -192,7 +192,7 @@ export default function Register() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex items-center justify-center gap-3 mb-8">
-          <img src={dealexpressLogo} alt="DealExpress" className="w-10 h-10 object-contain" />
+          <img src={themedLogo} alt="DealExpress" className="w-10 h-10 object-contain" />
           <span className="text-2xl font-bold text-foreground">DealExpress</span>
         </div>
 
