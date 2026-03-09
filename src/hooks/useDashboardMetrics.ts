@@ -174,6 +174,30 @@ export function useDashboardMetrics() {
         .sort((a, b) => b.count - a.count)
         .slice(0, 5);
 
+      // Proposals by vendor
+      const vendorCounts: Record<string, { count: number; value: number }> = {};
+      proposals.forEach((p) => {
+        if (!vendorCounts[p.created_by]) {
+          vendorCounts[p.created_by] = { count: 0, value: 0 };
+        }
+        vendorCounts[p.created_by].count++;
+        vendorCounts[p.created_by].value += proposalTotals[p.id] || 0;
+      });
+
+      const userNameMap = new Map<string, string>();
+      users.forEach((u) => {
+        if (u.id && u.name) userNameMap.set(u.id, u.name);
+      });
+
+      const proposalsByVendor = Object.entries(vendorCounts)
+        .map(([userId, stats]) => ({
+          name: userNameMap.get(userId) || 'Desconhecido',
+          count: stats.count,
+          value: stats.value,
+        }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10);
+
       setMetrics({
         proposals: {
           total: proposals.length,
