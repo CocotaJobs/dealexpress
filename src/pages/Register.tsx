@@ -20,6 +20,7 @@ interface InvitationInfo {
 }
 
 export default function Register() {
+  const themedLogo = useThemedLogo();
   const [searchParams] = useSearchParams();
   const inviteEmail = searchParams.get('email') || '';
   const inviteToken = searchParams.get('token') || '';
