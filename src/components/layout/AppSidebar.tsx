@@ -4,7 +4,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/contexts/AuthContext';
 import { LayoutDashboard, Package, Files, Users, PlusCircle, List, Settings, LogOut, ChevronUp, MessageSquare, FileText } from 'lucide-react';
-import dealexpressLogo from '@/assets/dealexpress-logo.png';
+import { useThemedLogo } from '@/hooks/useThemedLogo';
 const adminMenuItems = [{
   title: 'Dashboard',
   icon: LayoutDashboard,
