@@ -161,7 +161,7 @@ const StatCard = React.forwardRef<HTMLDivElement, StatCardProps>(({
 });
 StatCard.displayName = 'StatCard';
 
-const COLORS = ['hsl(var(--primary))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))'];
+const COLORS = ['hsl(var(--primary))', 'hsl(var(--primary))', 'hsl(var(--primary))'];
 
 export default function Dashboard() {
   const { profile } = useAuth();
@@ -469,7 +469,7 @@ export default function Dashboard() {
                       />
                       <Bar
                         dataKey="count"
-                        fill="hsl(var(--chart-3))"
+                        fill="hsl(var(--primary))"
                         radius={[0, 4, 4, 0]}
                         isAnimationActive={true}
                         animationDuration={1200}
@@ -587,7 +587,7 @@ export default function Dashboard() {
                     />
                     <Bar 
                       dataKey="count" 
-                      fill="hsl(var(--chart-2))" 
+                      fill="hsl(var(--primary))" 
                       radius={[0, 4, 4, 0]}
                       isAnimationActive={true}
                       animationDuration={1200}
