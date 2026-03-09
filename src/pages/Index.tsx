@@ -27,13 +27,14 @@ const features = [
 ];
 
 export default function Index() {
+  const themedLogo = useThemedLogo();
   return (
     <div className="min-h-screen bg-gradient-surface">
       {/* Header */}
       <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-6 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3">
-            <img src={dealexpressLogo} alt="DealExpress" className="w-9 h-9 object-contain" />
+            <img src={themedLogo} alt="DealExpress" className="w-9 h-9 object-contain" />
             <span className="text-xl font-bold">DealExpress</span>
           </Link>
           <div className="flex items-center gap-4">
