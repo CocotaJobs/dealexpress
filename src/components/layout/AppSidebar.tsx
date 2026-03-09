@@ -63,7 +63,7 @@ export function AppSidebar() {
       <SidebarHeader className="p-4">
         <Link to="/dashboard" className="flex items-center gap-3 group">
           <div className="relative flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-primary/20 via-primary/10 to-transparent ring-1 ring-primary/20 shadow-primary transition-all duration-300 group-hover:shadow-lg group-hover:ring-primary/40">
-            <img alt="DealExpress" className="w-9 h-9 object-contain drop-shadow-sm" src="/lovable-uploads/b7744f53-5c08-4e9f-8f7b-9dff6e259ac7.png" />
+            <img alt="DealExpress" className="w-9 h-9 object-contain drop-shadow-sm" src={themedLogo} />
           </div>
           <span className="text-lg font-bold text-sidebar-foreground">DealExpress</span>
         </Link>
