@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Eye, EyeOff, ArrowRight, Loader2, CheckCircle2, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import dealexpressLogo from '@/assets/dealexpress-logo.png';
+import { useThemedLogo } from '@/hooks/useThemedLogo';
 
 interface InvitationInfo {
   email: string;
@@ -20,6 +20,7 @@ interface InvitationInfo {
 }
 
 export default function Register() {
+  const themedLogo = useThemedLogo();
   const [searchParams] = useSearchParams();
   const inviteEmail = searchParams.get('email') || '';
   const inviteToken = searchParams.get('token') || '';
@@ -191,7 +192,7 @@ export default function Register() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex items-center justify-center gap-3 mb-8">
-          <img src={dealexpressLogo} alt="DealExpress" className="w-10 h-10 object-contain" />
+          <img src={themedLogo} alt="DealExpress" className="w-10 h-10 object-contain" />
           <span className="text-2xl font-bold text-foreground">DealExpress</span>
         </div>
 

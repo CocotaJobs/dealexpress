@@ -6,8 +6,9 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
 import { Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react';
-import dealexpressLogo from '@/assets/dealexpress-logo.png';
+import { useThemedLogo } from '@/hooks/useThemedLogo';
 export default function Login() {
+  const themedLogo = useThemedLogo();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -108,7 +109,7 @@ export default function Login() {
         <div className="w-full max-w-md">
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center justify-center gap-3 mb-8">
-            <img src={dealexpressLogo} alt="DealExpress" className="w-10 h-10 object-contain" />
+            <img src={themedLogo} alt="DealExpress" className="w-10 h-10 object-contain" />
             <span className="text-2xl font-bold text-foreground">DealExpress</span>
           </div>
 

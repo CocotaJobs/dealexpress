@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, Zap, Shield, MessageSquare, BarChart3 } from 'lucide-react';
-import dealexpressLogo from '@/assets/dealexpress-logo.png';
+import { useThemedLogo } from '@/hooks/useThemedLogo';
 
 const features = [
   {
@@ -27,13 +27,14 @@ const features = [
 ];
 
 export default function Index() {
+  const themedLogo = useThemedLogo();
   return (
     <div className="min-h-screen bg-gradient-surface">
       {/* Header */}
       <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-6 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3">
-            <img src={dealexpressLogo} alt="DealExpress" className="w-9 h-9 object-contain" />
+            <img src={themedLogo} alt="DealExpress" className="w-9 h-9 object-contain" />
             <span className="text-xl font-bold">DealExpress</span>
           </Link>
           <div className="flex items-center gap-4">
@@ -151,7 +152,7 @@ export default function Index() {
         <div className="container mx-auto px-6">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <img src={dealexpressLogo} alt="DealExpress" className="w-8 h-8 object-contain" />
+              <img src={themedLogo} alt="DealExpress" className="w-8 h-8 object-contain" />
               <span className="font-bold">DealExpress</span>
             </div>
             <p className="text-sm text-muted-foreground">
