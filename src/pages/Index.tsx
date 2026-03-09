@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, Zap, Shield, MessageSquare, BarChart3 } from 'lucide-react';
-import dealexpressLogo from '@/assets/dealexpress-logo.png';
+import { useThemedLogo } from '@/hooks/useThemedLogo';
 
 const features = [
   {

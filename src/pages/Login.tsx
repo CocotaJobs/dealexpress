@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
 import { Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react';
-import dealexpressLogo from '@/assets/dealexpress-logo.png';
+import { useThemedLogo } from '@/hooks/useThemedLogo';
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

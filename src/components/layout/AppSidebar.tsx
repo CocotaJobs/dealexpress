@@ -50,6 +50,7 @@ export function AppSidebar() {
     profile,
     signOut
   } = useAuth();
+  const themedLogo = useThemedLogo();
   const isAdmin = profile?.role === 'admin';
   const mainMenuItems = isAdmin ? adminMenuItems : vendorMenuItems;
   const getInitials = (name: string) => {

@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Eye, EyeOff, ArrowRight, Loader2, CheckCircle2, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import dealexpressLogo from '@/assets/dealexpress-logo.png';
+import { useThemedLogo } from '@/hooks/useThemedLogo';
 
 interface InvitationInfo {
   email: string;
