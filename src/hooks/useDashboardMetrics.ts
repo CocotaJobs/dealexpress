@@ -47,6 +47,7 @@ interface DashboardMetrics {
   };
   monthlyData: MonthlyData[];
   topItems: TopItem[];
+  proposalsByVendor: VendorStats[];
   previousMonthComparison: {
     proposalsChange: number;
     valueChange: number;
