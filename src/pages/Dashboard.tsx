@@ -417,6 +417,74 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      {/* Propostas por Vendedor - Admin only */}
+      {isAdmin && (
+        <div className="grid gap-6 lg:grid-cols-1">
+          <Card className="shadow-card animate-stagger-in" style={{ '--stagger-delay': '375ms' } as React.CSSProperties}>
+            <CardHeader>
+              <CardTitle className="text-lg font-semibold">Propostas por Vendedor</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <Skeleton className="h-[280px] w-full" />
+              ) : metrics.proposalsByVendor.length === 0 ? (
+                <div className="h-[280px] flex items-center justify-center text-muted-foreground">
+                  <div className="text-center">
+                    <Users className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                    <p>Nenhuma proposta criada ainda</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="h-[280px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={metrics.proposalsByVendor} layout="vertical" margin={{ left: 10, right: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis
+                        type="number"
+                        stroke="hsl(var(--muted-foreground))"
+                        fontSize={12}
+                        tickLine={false}
+                        allowDecimals={false}
+                      />
+                      <YAxis
+                        dataKey="name"
+                        type="category"
+                        stroke="hsl(var(--muted-foreground))"
+                        fontSize={11}
+                        width={130}
+                        tickLine={false}
+                        tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'hsl(var(--card))',
+                          border: '1px solid hsl(var(--border))',
+                          borderRadius: '8px',
+                        }}
+                        formatter={(value: number, name: string) => {
+                          if (name === 'count') return [value, 'Propostas'];
+                          if (name === 'value') return [formatCurrency(value), 'Valor Total'];
+                          return [value, name];
+                        }}
+                      />
+                      <Bar
+                        dataKey="count"
+                        fill="hsl(var(--chart-3))"
+                        radius={[0, 4, 4, 0]}
+                        isAnimationActive={true}
+                        animationDuration={1200}
+                        animationEasing="ease-out"
+                        animationBegin={450}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Second Charts Row */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Bar Chart - Valor por Período */}

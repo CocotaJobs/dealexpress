@@ -219,6 +219,7 @@ export function useDashboardMetrics() {
         },
         monthlyData,
         topItems,
+        proposalsByVendor,
         previousMonthComparison: {
           proposalsChange: Math.round(proposalsChange),
           valueChange: Math.round(valueChange),
