@@ -541,10 +541,33 @@ async function handleSendMessage(
   console.log(`Phone formatted: ${phone} -> ${formattedPhone}`);
 
   if (mediaUrl && mediaType) {
-    // Send media message
-    const endpoint = mediaType === 'document' 
-      ? `${evolutionUrl}/message/sendMedia/${instanceName}`
-      : `${evolutionUrl}/message/sendMedia/${instanceName}`;
+    // Download the file content inside the edge function to avoid
+    // Evolution API failing to fetch from private Supabase Storage URLs
+    console.log(`Downloading media from: ${mediaUrl.substring(0, 80)}...`);
+    const mediaResponse = await fetch(mediaUrl);
+    if (!mediaResponse.ok) {
+      console.error(`Failed to download media: ${mediaResponse.status}`);
+      return new Response(
+        JSON.stringify({ error: 'Falha ao baixar o arquivo para envio' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const mediaBuffer = await mediaResponse.arrayBuffer();
+    const uint8 = new Uint8Array(mediaBuffer);
+    // Encode to base64 in chunks to avoid stack overflow on large files
+    let binaryStr = '';
+    for (let i = 0; i < uint8.length; i++) {
+      binaryStr += String.fromCharCode(uint8[i]);
+    }
+    const base64Content = btoa(binaryStr);
+
+    const mimeType = mediaType === 'image' ? 'image/png' : 'application/pdf';
+    const dataUri = `data:${mimeType};base64,${base64Content}`;
+    console.log(`Media downloaded: ${uint8.length} bytes, base64 length: ${base64Content.length}`);
+
+    // Send media message with base64 content
+    const endpoint = `${evolutionUrl}/message/sendMedia/${instanceName}`;
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -555,7 +578,8 @@ async function handleSendMessage(
       body: JSON.stringify({
         number: formattedPhone,
         mediatype: mediaType,
-        media: mediaUrl,
+        mimetype: mimeType,
+        media: dataUri,
         caption: message,
         fileName: fileName || 'document.pdf',
       }),
