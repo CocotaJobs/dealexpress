@@ -1,52 +1,31 @@
 
 
-## Correção do Webhook da Evolution API
-
-O QR Code não está aparecendo porque os webhooks da Evolution API não estão sendo processados corretamente pela edge function.
+## Correção: Mensagem WhatsApp aparece para o vendedor mas não chega ao cliente
 
 ### Diagnóstico
 
-A instância do WhatsApp está sendo criada com sucesso na Evolution API e entra em estado "connecting". O QR Code deveria chegar via webhook (`QRCODE_UPDATED`), mas:
+O comportamento descrito confirma o problema: a Evolution API **aceita** o envio e registra a mensagem na sessão do vendedor, mas quando tenta **entregar** ao destinatário, precisa baixar o PDF da `mediaUrl` (signed URL do Supabase Storage). Como o servidor da Evolution API não consegue acessar essa URL (bucket privado, headers de autenticação, etc.), a entrega falha silenciosamente — a mensagem fica "enviada" no lado do vendedor mas nunca chega ao cliente.
 
-- Nenhum log de webhook aparece nos registros da edge function
-- O polling de status retorna `qrcode: null` consistentemente
-- A instância fica alternando entre estados "close" e "connecting"
+### Solução
 
-### Causa Raiz
+**Arquivo**: `supabase/functions/whatsapp/index.ts` — função `handleSendMessage` (linhas 543-577)
 
-A Evolution API envia webhooks no formato:
+Modificar o bloco de envio de mídia para:
+
+1. **Baixar o PDF dentro da edge function** via `fetch(mediaUrl)` — funciona porque a edge function tem acesso ao Supabase Storage
+2. **Converter para base64** e montar uma data URI
+3. **Adicionar campo `mimetype`** ao payload da Evolution API
+4. **Manter logs** do tamanho do arquivo para diagnóstico
+
 ```text
-{
-  "event": "QRCODE_UPDATED",
-  "instance": "user_xxx",
-  "data": { "qrcode": { "base64": "..." } }
-}
+Fluxo atual (falha silenciosa na entrega):
+  Edge Function passa URL → Evolution API aceita → Mensagem aparece no vendedor
+  → Evolution tenta baixar PDF da URL → Falha → Cliente não recebe
+
+Fluxo corrigido:
+  Edge Function baixa PDF → Converte base64 → Evolution API recebe dados diretos
+  → Mensagem entregue ao cliente ✓
 ```
 
-Porém, a edge function espera que o body tenha `action: "webhook"` (linha 87) para identificar que e um webhook e pular a autenticacao. Como a Evolution API nao envia o campo `action`, o request cai no bloco de autenticacao (linha 92), que exige um Bearer token. O webhook da Evolution nao tem Bearer token, entao retorna 401 silenciosamente (sem logs).
+Nenhuma outra alteração necessária no frontend ou no fluxo de geração de PDF.
 
-### Solucao
-
-Modificar o inicio da edge function `supabase/functions/whatsapp/index.ts` para detectar webhooks da Evolution API automaticamente pelo formato do body, antes de exigir autenticacao.
-
-**Arquivo**: `supabase/functions/whatsapp/index.ts`
-
-1. **Adicionar deteccao automatica de webhook** (apos parsear o body, antes do check de `action`):
-   - Se o body contiver `event` e `instance` mas nao `action`, tratar como webhook automaticamente
-   - Definir `action = 'webhook'` e reformatar o body para o formato esperado pela funcao `handleWebhook`
-
-2. **Mudanca especifica** nas linhas 82-89:
-   - Apos `const body = await req.json()`, verificar: se `body.event` e `body.instance` existem e `body.action` nao existe, entao e um webhook da Evolution API
-   - Nesse caso, chamar `handleWebhook()` diretamente com o body formatado como `WebhookRequest`
-
-3. **Nenhuma outra alteracao necessaria** — o handler de webhook (`handleWebhook`) ja esta correto e processa os eventos `QRCODE_UPDATED` e `CONNECTION_UPDATE` corretamente.
-
-### Resumo
-
-| Item | Detalhe |
-|---|---|
-| Arquivo alterado | `supabase/functions/whatsapp/index.ts` |
-| Linhas afetadas | ~82-89 (deteccao de webhook) |
-| Causa | Evolution API nao envia `action: "webhook"` no body |
-| Correcao | Detectar webhooks pelo formato `{event, instance, data}` |
-| Impacto | Apenas o fluxo de recebimento de webhook |
