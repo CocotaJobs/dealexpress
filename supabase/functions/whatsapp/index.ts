@@ -563,10 +563,9 @@ async function handleSendMessage(
     const base64Content = btoa(binaryStr);
 
     const mimeType = mediaType === 'image' ? 'image/png' : 'application/pdf';
-    const dataUri = `data:${mimeType};base64,${base64Content}`;
-    console.log(`Media downloaded: ${uint8.length} bytes, base64 length: ${base64Content.length}`);
+    console.log(`Media downloaded: ${uint8.length} bytes, base64 length: ${base64Content.length}, format: raw-base64`);
 
-    // Send media message with base64 content
+    // Send media message with raw base64 content (no data URI prefix)
     const endpoint = `${evolutionUrl}/message/sendMedia/${instanceName}`;
 
     const response = await fetch(endpoint, {
@@ -579,7 +578,7 @@ async function handleSendMessage(
         number: formattedPhone,
         mediatype: mediaType,
         mimetype: mimeType,
-        media: dataUri,
+        media: base64Content,
         caption: message,
         fileName: fileName || 'document.pdf',
       }),
@@ -587,9 +586,9 @@ async function handleSendMessage(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Error sending media:', errorText);
+      console.error(`Error sending media (status ${response.status}):`, errorText);
       return new Response(
-        JSON.stringify({ error: 'Falha ao enviar mídia' }),
+        JSON.stringify({ error: 'Falha ao enviar mídia via WhatsApp', details: errorText }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
