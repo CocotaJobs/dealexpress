@@ -232,9 +232,10 @@ export default function ViewProposal() {
 
           if (whatsappResponse.error) {
             console.error('Error sending WhatsApp:', whatsappResponse.error);
+            const errorDetail = whatsappResponse.error?.message || whatsappResponse.data?.error || 'Erro desconhecido';
             toast({
               title: 'PDF gerado, mas houve erro no envio',
-              description: 'O PDF foi gerado. Tente enviar manualmente.',
+              description: `O PDF foi gerado mas o envio falhou: ${errorDetail}. Tente enviar manualmente.`,
               variant: 'destructive',
             });
           } else {
