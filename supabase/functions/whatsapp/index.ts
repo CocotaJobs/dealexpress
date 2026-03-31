@@ -586,9 +586,9 @@ async function handleSendMessage(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Error sending media:', errorText);
+      console.error(`Error sending media (status ${response.status}):`, errorText);
       return new Response(
-        JSON.stringify({ error: 'Falha ao enviar mídia' }),
+        JSON.stringify({ error: 'Falha ao enviar mídia via WhatsApp', details: errorText }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
