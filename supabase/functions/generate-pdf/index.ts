@@ -2,7 +2,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import PizZip from 'https://esm.sh/pizzip@3.1.7';
 import Docxtemplater from 'https://esm.sh/docxtemplater@3.47.4';
 import { PDFDocument, StandardFonts, rgb } from 'https://esm.sh/pdf-lib@1.17.1';
-// base64Encode import removed — LightPDF uses form-data upload
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -342,103 +341,146 @@ async function processDocxTemplate(
   }
 }
 
-// Convert DOCX to PDF using LightPDF API (async 2-step flow)
-async function convertDocxToPdfWithLightPdf(docxBuffer: Uint8Array, fileName: string): Promise<Uint8Array> {
-  const LIGHTPDF_API_KEY = Deno.env.get('LIGHTPDF_API_KEY');
-  
-  if (!LIGHTPDF_API_KEY) {
-    console.error('LIGHTPDF_API_KEY is not configured');
+// Convert DOCX to PDF using CloudConvert API (job-based flow)
+async function convertDocxToPdfWithCloudConvert(docxBuffer: Uint8Array, fileName: string): Promise<Uint8Array> {
+  const CLOUDCONVERT_API_KEY = Deno.env.get('CLOUDCONVERT_API_KEY');
+
+  if (!CLOUDCONVERT_API_KEY) {
+    console.error('CLOUDCONVERT_API_KEY is not configured');
     throw new Error('Serviço de conversão PDF indisponível');
   }
 
-  console.log('Converting DOCX to PDF via LightPDF...');
+  console.log('Converting DOCX to PDF via CloudConvert...');
 
-  // Step 1: Create conversion task by uploading the DOCX file
-  const formData = new FormData();
-  const blob = new Blob([docxBuffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-  formData.append('file', blob, fileName);
-  formData.append('format', 'pdf');
-
-  const createResponse = await fetch('https://techhk.aoscdn.com/api/tasks/document/conversion', {
+  // Step 1: Create a job with 3 tasks (import upload / convert / export url)
+  const createResponse = await fetch('https://api.cloudconvert.com/v2/jobs', {
     method: 'POST',
     headers: {
-      'X-API-KEY': LIGHTPDF_API_KEY,
+      'Authorization': `Bearer ${CLOUDCONVERT_API_KEY}`,
+      'Content-Type': 'application/json',
     },
-    body: formData,
+    body: JSON.stringify({
+      tasks: {
+        'upload-file': { operation: 'import/upload' },
+        'convert-file': {
+          operation: 'convert',
+          input: 'upload-file',
+          input_format: 'docx',
+          output_format: 'pdf',
+        },
+        'export-file': {
+          operation: 'export/url',
+          input: 'convert-file',
+        },
+      },
+    }),
   });
 
   if (!createResponse.ok) {
     const errorText = await createResponse.text();
-    console.error('LightPDF task creation failed:', createResponse.status, errorText);
-    if (createResponse.status === 401 || createResponse.status === 429) {
+    console.error('CloudConvert job creation failed:', createResponse.status, errorText);
+    if (createResponse.status === 401) {
+      throw new Error('Chave da API de conversão inválida');
+    }
+    if (createResponse.status === 402 || createResponse.status === 429) {
       throw new Error('Créditos ou autenticação do serviço de conversão inválidos');
     }
     throw new Error('Falha ao iniciar conversão do documento');
   }
 
   const createData = await createResponse.json();
-  const taskId = createData?.data?.task_id;
+  const jobId = createData?.data?.id;
+  const uploadTask = createData?.data?.tasks?.find((t: { name: string }) => t.name === 'upload-file');
+  const uploadForm = uploadTask?.result?.form;
 
-  if (!taskId) {
-    console.error('LightPDF did not return a task_id:', JSON.stringify(createData));
+  if (!jobId || !uploadForm?.url || !uploadForm?.parameters) {
+    console.error('CloudConvert did not return upload form:', JSON.stringify(createData));
     throw new Error('Falha ao iniciar conversão do documento');
   }
 
-  console.log('LightPDF task created:', taskId);
+  console.log('CloudConvert job created:', jobId);
 
-  // Step 2: Poll for task completion (max 30 seconds, every 1 second)
+  // Step 2: Upload the DOCX to the pre-signed URL returned by CloudConvert.
+  // The form parameters must be sent as multipart fields BEFORE the file field.
+  const uploadFormData = new FormData();
+  for (const [key, value] of Object.entries(uploadForm.parameters as Record<string, string>)) {
+    uploadFormData.append(key, value);
+  }
+  const blob = new Blob([docxBuffer], {
+    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  });
+  uploadFormData.append('file', blob, fileName);
+
+  const uploadResponse = await fetch(uploadForm.url, {
+    method: 'POST',
+    body: uploadFormData,
+  });
+
+  if (!uploadResponse.ok) {
+    const errorText = await uploadResponse.text();
+    console.error('CloudConvert file upload failed:', uploadResponse.status, errorText);
+    throw new Error('Falha ao enviar documento para conversão');
+  }
+
+  console.log('DOCX uploaded to CloudConvert, waiting for conversion...');
+
+  // Step 3: Poll job status until finished (max 60 seconds, every 2 seconds)
   const maxAttempts = 30;
-  let pdfDownloadUrl: string | null = null;
+  let exportedUrl: string | null = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
-    const statusResponse = await fetch(`https://techhk.aoscdn.com/api/tasks/document/conversion/${taskId}`, {
+    const statusResponse = await fetch(`https://api.cloudconvert.com/v2/jobs/${jobId}`, {
       method: 'GET',
-      headers: {
-        'X-API-KEY': LIGHTPDF_API_KEY,
-      },
+      headers: { 'Authorization': `Bearer ${CLOUDCONVERT_API_KEY}` },
     });
 
     if (!statusResponse.ok) {
-      console.error('LightPDF status check failed:', statusResponse.status);
+      console.error('CloudConvert status check failed:', statusResponse.status);
       continue;
     }
 
     const statusData = await statusResponse.json();
-    const state = statusData?.data?.state;
+    const status = statusData?.data?.status;
 
-    console.log(`LightPDF poll attempt ${attempt + 1}/${maxAttempts}, state: ${state}`);
+    console.log(`CloudConvert poll attempt ${attempt + 1}/${maxAttempts}, status: ${status}`);
 
-    if (state === 1) {
-      // Success
-      pdfDownloadUrl = statusData?.data?.file;
+    if (status === 'finished') {
+      const exportTask = statusData?.data?.tasks?.find((t: { name: string }) => t.name === 'export-file');
+      exportedUrl = exportTask?.result?.files?.[0]?.url ?? null;
+      if (!exportedUrl) {
+        console.error('CloudConvert finished but no export URL:', JSON.stringify(statusData));
+        throw new Error('Falha ao obter URL do PDF convertido');
+      }
       break;
-    } else if (state !== undefined && state < 0) {
-      // Error state
-      console.error('LightPDF conversion error, state:', state, JSON.stringify(statusData));
+    }
+
+    if (status === 'error') {
+      const failedTask = statusData?.data?.tasks?.find((t: { status: string }) => t.status === 'error');
+      console.error('CloudConvert conversion error:', JSON.stringify(failedTask));
       throw new Error('Falha ao converter documento para PDF');
     }
-    // state === 4 or other positive values: still processing, continue polling
+    // status === 'waiting' | 'processing' → keep polling
   }
 
-  if (!pdfDownloadUrl) {
-    console.error('LightPDF conversion timed out after', maxAttempts, 'seconds');
+  if (!exportedUrl) {
+    console.error('CloudConvert conversion timed out after', maxAttempts * 2, 'seconds');
     throw new Error('Tempo limite excedido na conversão do documento para PDF');
   }
 
-  // Step 3: Download the resulting PDF
-  console.log('Downloading converted PDF from LightPDF...');
-  const pdfResponse = await fetch(pdfDownloadUrl);
-  
+  // Step 4: Download the resulting PDF
+  console.log('Downloading converted PDF from CloudConvert...');
+  const pdfResponse = await fetch(exportedUrl);
+
   if (!pdfResponse.ok) {
     console.error('Failed to download converted PDF:', pdfResponse.status);
     throw new Error('Falha ao baixar PDF convertido');
   }
 
   const pdfArrayBuffer = await pdfResponse.arrayBuffer();
-  console.log('PDF downloaded from LightPDF, size:', pdfArrayBuffer.byteLength, 'bytes');
-  
+  console.log('PDF downloaded from CloudConvert, size:', pdfArrayBuffer.byteLength, 'bytes');
+
   return new Uint8Array(pdfArrayBuffer);
 }
 
@@ -920,7 +962,7 @@ Deno.serve(async (req) => {
           .storage
           .from('generated-pdfs')
           .upload(docxFileName, docxBuffer, {
-            contentType: 'application/octet-stream',
+            contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             cacheControl: '0',
             upsert: true,
           });
@@ -939,25 +981,25 @@ Deno.serve(async (req) => {
           console.log('Processed DOCX saved to storage:', docxFileName);
         }
 
-        // Convert DOCX to PDF using LightPDF
-        pdfBuffer = await convertDocxToPdfWithLightPdf(docxBuffer, `${proposal.proposal_number}.docx`);
+        // Convert DOCX to PDF using CloudConvert
+        pdfBuffer = await convertDocxToPdfWithCloudConvert(docxBuffer, `${proposal.proposal_number}.docx`);
         usedCustomTemplate = true;
-        console.log('PDF generated from custom template via LightPDF');
+        console.log('PDF generated from custom template via CloudConvert');
 
       } catch (templateProcessError) {
         console.error('Error processing custom template:', templateProcessError);
         
         const errorMsg = templateProcessError instanceof Error ? templateProcessError.message : String(templateProcessError);
         
-        // Detect LightPDF credit/auth errors
-        const isCreditsError = /401|429|créditos|autenticação|inválidos/i.test(errorMsg);
-        
+        // Detect CloudConvert credit/auth errors
+        const isCreditsError = /401|402|429|créditos|autenticação|inválidos|inválida/i.test(errorMsg);
+
         let userMessage = 'Erro ao processar template';
         let userDetails = 'Verifique se o template está formatado corretamente.';
-        
+
         if (isCreditsError) {
           userMessage = 'Créditos insuficientes no serviço de conversão';
-          userDetails = 'Os créditos do LightPDF acabaram ou a chave de API é inválida. Entre em contato com o administrador.';
+          userDetails = 'Os créditos do CloudConvert acabaram ou a chave de API é inválida. Entre em contato com o administrador.';
         } else {
           // Check for docxtemplater tag errors
           // deno-lint-ignore no-explicit-any
