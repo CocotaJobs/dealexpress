@@ -72,7 +72,29 @@ export function usePdfGeneration() {
       });
 
       if (response.error) {
-        throw new Error(response.error.message || 'Erro ao gerar PDF');
+        // Try to read the real reason from the function response body
+        let detailedMessage = '';
+        try {
+          // deno-lint-ignore no-explicit-any
+          const ctx = (response.error as unknown as { context?: Response }).context;
+          if (ctx && typeof ctx.text === 'function') {
+            const raw = await ctx.text();
+            try {
+              const parsed = JSON.parse(raw);
+              detailedMessage = [parsed.error, parsed.details]
+                .filter(Boolean)
+                .join(' — ');
+            } catch {
+              detailedMessage = raw;
+            }
+          }
+        } catch {
+          // ignore parsing failures, fall back to generic message
+        }
+
+        throw new Error(
+          detailedMessage || response.error.message || 'Erro ao gerar PDF'
+        );
       }
 
       const result = response.data as PdfGenerationResult;
