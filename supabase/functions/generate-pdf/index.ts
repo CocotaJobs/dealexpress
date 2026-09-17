@@ -962,7 +962,7 @@ Deno.serve(async (req) => {
           .storage
           .from('generated-pdfs')
           .upload(docxFileName, docxBuffer, {
-            contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            contentType: 'application/octet-stream',
             cacheControl: '0',
             upsert: true,
           });
