@@ -318,7 +318,7 @@ export function useProposals() {
           client_address: proposal.client_address,
           client_cnpj: proposal.client_cnpj,
           shipping: proposal.shipping,
-          technical_training: proposal.technical_training,
+          technical_training_text: proposal.technical_training_text,
           payment_conditions: proposal.payment_conditions,
           validity_days: proposal.validity_days,
           status: 'draft',

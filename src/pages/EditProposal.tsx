@@ -93,7 +93,7 @@ export default function EditProposal() {
   const [paymentConditions, setPaymentConditions] = useState('');
   const [validityDays, setValidityDays] = useState(15);
   const [shipping, setShipping] = useState<string | null>(null);
-  const [technicalTraining, setTechnicalTraining] = useState(false);
+  const [technicalTraining, setTechnicalTraining] = useState('');
 
   useEffect(() => {
     if (id) {
@@ -144,7 +144,7 @@ export default function EditProposal() {
       setPaymentConditions(proposal.payment_conditions || '');
       setValidityDays(proposal.validity_days);
       setShipping(proposal.shipping || null);
-      setTechnicalTraining(proposal.technical_training ?? false);
+      setTechnicalTraining(proposal.technical_training_text || '');
 
       setProposalItems(
         (itemsData || []).map((item): ProposalItemFormData => ({
@@ -316,7 +316,7 @@ export default function EditProposal() {
         payment_conditions: paymentConditions.trim() || null,
         validity_days: validityDays,
         shipping: shipping,
-        technical_training: technicalTraining,
+        technical_training_text: technicalTraining.trim() || null,
       },
       proposalItems
     );
@@ -369,7 +369,7 @@ export default function EditProposal() {
         payment_conditions: paymentConditions.trim() || null,
         validity_days: validityDays,
         shipping: shipping,
-        technical_training: technicalTraining,
+        technical_training_text: technicalTraining.trim() || null,
       },
       proposalItems
     );
@@ -446,7 +446,7 @@ export default function EditProposal() {
         payment_conditions: paymentConditions.trim() || null,
         validity_days: validityDays,
         shipping: shipping,
-        technical_training: technicalTraining,
+        technical_training_text: technicalTraining.trim() || null,
       },
       proposalItems
     );

@@ -307,6 +307,7 @@ export type Database = {
           shipping: string | null
           status: Database["public"]["Enums"]["proposal_status"]
           technical_training: boolean
+          technical_training_text: string | null
           updated_at: string
           validity_days: number
         }
@@ -329,6 +330,7 @@ export type Database = {
           shipping?: string | null
           status?: Database["public"]["Enums"]["proposal_status"]
           technical_training?: boolean
+          technical_training_text?: string | null
           updated_at?: string
           validity_days?: number
         }
@@ -351,6 +353,7 @@ export type Database = {
           shipping?: string | null
           status?: Database["public"]["Enums"]["proposal_status"]
           technical_training?: boolean
+          technical_training_text?: string | null
           updated_at?: string
           validity_days?: number
         }

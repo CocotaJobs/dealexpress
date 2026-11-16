@@ -8,6 +8,13 @@
       "when": 1794858158007,
       "tag": "0000_add_technical_training",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794858302171,
+      "tag": "0001_training_free_text",
+      "breakpoints": true
     }
   ]
 }

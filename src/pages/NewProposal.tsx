@@ -91,7 +91,7 @@ export default function NewProposal() {
   const [paymentConditions, setPaymentConditions] = useState('');
   const [validityDays, setValidityDays] = useState(15);
   const [shipping, setShipping] = useState<string | null>(null);
-  const [technicalTraining, setTechnicalTraining] = useState(false);
+  const [technicalTraining, setTechnicalTraining] = useState('');
 
   // Filter active items only
   const activeItems = items.filter((item) => item.active);
@@ -245,7 +245,7 @@ export default function NewProposal() {
         validity_days: validityDays,
         status: 'draft',
         shipping: shipping,
-        technical_training: technicalTraining,
+        technical_training_text: technicalTraining.trim() || null,
       },
       proposalItems
     );
@@ -299,7 +299,7 @@ export default function NewProposal() {
           validity_days: validityDays,
           status: 'draft',
           shipping: shipping,
-        technical_training: technicalTraining,
+        technical_training_text: technicalTraining.trim() || null,
         },
         proposalItems
       );
@@ -385,7 +385,7 @@ export default function NewProposal() {
           validity_days: validityDays,
           status: 'draft',
           shipping: shipping,
-        technical_training: technicalTraining,
+        technical_training_text: technicalTraining.trim() || null,
         },
         proposalItems
       );
