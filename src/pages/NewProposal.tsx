@@ -49,6 +49,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
 import { DiscountTypeToggle } from '@/components/proposals/DiscountTypeToggle';
 import { ShippingField } from '@/components/proposals/ShippingField';
+import { TrainingField } from '@/components/proposals/TrainingField';
+import { validateClientFields } from '@/lib/proposals/validateClient';
 import { DocumentTypeField, DocumentType } from '@/components/proposals/DocumentTypeField';
 
 export default function NewProposal() {
@@ -89,6 +91,7 @@ export default function NewProposal() {
   const [paymentConditions, setPaymentConditions] = useState('');
   const [validityDays, setValidityDays] = useState(15);
   const [shipping, setShipping] = useState<string | null>(null);
+  const [technicalTraining, setTechnicalTraining] = useState(false);
 
   // Filter active items only
   const activeItems = items.filter((item) => item.active);
@@ -208,10 +211,11 @@ export default function NewProposal() {
 
 
   const validateForm = () => {
-    if (!clientName.trim()) {
+    const error = validateClientFields({ clientCompany, clientDocument, clientName, clientWhatsApp });
+    if (error) {
       toast({
         title: 'Campo obrigatório',
-        description: 'Preencha o nome do cliente.',
+        description: error,
         variant: 'destructive',
       });
       return false;
@@ -241,6 +245,7 @@ export default function NewProposal() {
         validity_days: validityDays,
         status: 'draft',
         shipping: shipping,
+        technical_training: technicalTraining,
       },
       proposalItems
     );
@@ -294,6 +299,7 @@ export default function NewProposal() {
           validity_days: validityDays,
           status: 'draft',
           shipping: shipping,
+        technical_training: technicalTraining,
         },
         proposalItems
       );
@@ -379,6 +385,7 @@ export default function NewProposal() {
           validity_days: validityDays,
           status: 'draft',
           shipping: shipping,
+        technical_training: technicalTraining,
         },
         proposalItems
       );
@@ -461,7 +468,7 @@ export default function NewProposal() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="clientName">
-                    Nome completo <span className="text-destructive">*</span>
+                    Nome do cliente/contato <span className="text-destructive">*</span>
                   </Label>
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -491,7 +498,7 @@ export default function NewProposal() {
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="clientWhatsApp">WhatsApp</Label>
+                  <Label htmlFor="clientWhatsApp">Telefone/WhatsApp <span className="text-destructive">*</span></Label>
                   <div className="relative">
                     <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
@@ -504,7 +511,7 @@ export default function NewProposal() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="clientCompany">Empresa</Label>
+                  <Label htmlFor="clientCompany">Empresa <span className="text-destructive">*</span></Label>
                   <div className="relative">
                     <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
@@ -738,6 +745,9 @@ export default function NewProposal() {
                   value={shipping}
                   onChange={setShipping}
                 />
+              </div>
+              <div className="border-t pt-4">
+                <TrainingField value={technicalTraining} onChange={setTechnicalTraining} />
               </div>
             </CardContent>
           </Card>

@@ -1,0 +1,1 @@
+ALTER TABLE public.proposals ADD COLUMN technical_training boolean NOT NULL DEFAULT false;

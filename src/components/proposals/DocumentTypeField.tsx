@@ -62,7 +62,7 @@ export function DocumentTypeField({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <Label htmlFor="clientDocument">{label}</Label>
+        <Label htmlFor="clientDocument">{label} <span className="text-destructive">*</span></Label>
         <ToggleGroup 
           type="single" 
           value={documentType} 

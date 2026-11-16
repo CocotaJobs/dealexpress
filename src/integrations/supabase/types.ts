@@ -306,6 +306,7 @@ export type Database = {
           sent_at: string | null
           shipping: string | null
           status: Database["public"]["Enums"]["proposal_status"]
+          technical_training: boolean
           updated_at: string
           validity_days: number
         }
@@ -327,6 +328,7 @@ export type Database = {
           sent_at?: string | null
           shipping?: string | null
           status?: Database["public"]["Enums"]["proposal_status"]
+          technical_training?: boolean
           updated_at?: string
           validity_days?: number
         }
@@ -348,6 +350,7 @@ export type Database = {
           sent_at?: string | null
           shipping?: string | null
           status?: Database["public"]["Enums"]["proposal_status"]
+          technical_training?: boolean
           updated_at?: string
           validity_days?: number
         }

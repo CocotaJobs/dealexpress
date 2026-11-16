@@ -35,6 +35,7 @@ interface ProposalData {
     created_at: string;
     expires_at?: string;
     shipping?: string;
+    technical_training?: boolean;
   };
   items: ProposalItem[];
   vendor?: { name: string; email: string } | null;
@@ -251,6 +252,7 @@ async function processDocxTemplate(
     validade_proposta: proposal.expires_at ? formatDate(proposal.expires_at) : '',
     validade_dias: String(proposal.validity_days),
     // Shipping field - use proposal.shipping if set, otherwise fall back to organization default
+    treinamento: proposal.technical_training ? 'Sim' : 'Não',
     frete: proposal.shipping || organization?.default_shipping || 'A combinar',
     // Loop array for dynamic items
     itens: itensArray,
