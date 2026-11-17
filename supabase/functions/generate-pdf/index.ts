@@ -236,6 +236,7 @@ async function processDocxTemplate(
     cliente_nome: proposal.client_name || '',
     cliente_email: proposal.client_email || '',
     cliente_whatsapp: proposal.client_whatsapp || '',
+    cliente_telefone: proposal.client_whatsapp || '',
     cliente_empresa: proposal.client_company || '',
     cliente_endereco: proposal.client_address || '',
     cliente_cnpj: proposal.client_cnpj || '',
